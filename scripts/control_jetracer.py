@@ -20,10 +20,10 @@ class RobotController:
         self.cmd_vel_pub = Topic(self.ros, "/cmd_vel", "geometry_msgs/Twist")
         print("Connected!")
 
-        # Movement settings
-        self.speed = 0.5  # Linear velocity (m/s)
-        self.turn = 0.6  # Angular velocity (rad/s)
-        self.turn_speed = 0.3  # Speed when turning in place
+        # Movement settings - slightly more aggressive
+        self.speed = 0.5  # Base linear velocity (m/s)
+        self.turn = 0.6  # Max turning rate (rad/s)
+        self.turn_speed = 0.35  # Speed while turning (increased from 0.3)
 
     def cleanup(self):
         """Reset everything to initial state"""
@@ -117,10 +117,10 @@ class RobotController:
                     linear_x = -self.speed
                 elif key in ["a"]:  # Turn Left
                     angular_z = self.turn
-                    linear_x = self.turn_speed  # Add some forward motion for turning
+                    linear_x = self.turn_speed
                 elif key in ["d"]:  # Turn Right
                     angular_z = -self.turn
-                    linear_x = self.turn_speed  # Add some forward motion for turning
+                    linear_x = self.turn_speed
                 elif key == " ":  # Stop
                     linear_x = 0
                     angular_z = 0
