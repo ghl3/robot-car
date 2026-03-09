@@ -3,6 +3,7 @@ import sys
 import math
 import numpy as np
 import roslibpy
+import matplotlib.pyplot as plt
 
 
 class LidarProcessor:
@@ -12,6 +13,11 @@ class LidarProcessor:
         self.ros.on("close", self.on_close)
         self.listener = None
         self.points = []
+
+        # Setup a simple interactive matplotlib plot
+        plt.ion()
+        self.fig, self.ax = plt.subplots()
+        self.scatter_plot = None
 
     def on_open(self):
         print("Connected to ROS.")
@@ -28,27 +34,25 @@ class LidarProcessor:
         angle_min = msg.get("angle_min", 0.0)
         angle_increment = msg.get("angle_increment", 0.0)
 
-        # Ensure range_min and range_max are valid floats
         if not (isinstance(range_min, float) and isinstance(range_max, float)):
             print("Invalid range_min or range_max; skipping message.")
             return
 
         points = []
         angle = angle_min
-
         for r in ranges:
-            # Skip any non-float, NaN, or None
             if isinstance(r, float) and range_min <= r <= range_max:
                 x = r * math.cos(angle)
                 y = r * math.sin(angle)
                 points.append((x, y))
             angle += angle_increment
 
-        if len(points) > 0:
+        if points:
             points = np.array(points)
             self.points = points
             print(f"\nProcessed {len(points)} points")
             self.detect_lines(points)
+            self.update_plot(points)
 
     def detect_lines(self, points, threshold=0.1):
         if len(points) < 2:
@@ -68,6 +72,17 @@ class LidarProcessor:
                 print(
                     f"Found potential wall: {len(inliers)} points, length: {length:.2f}m"
                 )
+
+    def update_plot(self, points):
+        # Clear the previous data
+        self.ax.clear()
+        # Plot lidar points
+        self.ax.scatter(points[:, 0], points[:, 1], s=1, c="b")
+        self.ax.set_aspect("equal", "box")
+        self.ax.set_xlim(-10, 10)  # Adjust as needed
+        self.ax.set_ylim(-10, 10)  # Adjust as needed
+        plt.draw()
+        plt.pause(0.001)
 
     def run(self):
         self.ros.run_forever()
