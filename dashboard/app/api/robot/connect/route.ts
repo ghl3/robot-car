@@ -54,11 +54,11 @@ const START_SCRIPT = [
   "done",
 ].join("\n");
 
-export async function POST(request) {
-  let ssh;
+export async function POST(request: Request) {
+  let ssh: Awaited<ReturnType<typeof getSSHConnection>> | null = null;
   try {
     const body = await request.json().catch(() => ({}));
-    const ip = body.ip;
+    const ip = body.ip as string | undefined;
     if (!ip) {
       return NextResponse.json(
         { success: false, message: "IP address is required" },
@@ -157,7 +157,7 @@ export async function POST(request) {
   } catch (error) {
     if (ssh) ssh.dispose();
     return NextResponse.json(
-      { success: false, message: error.message },
+      { success: false, message: (error as Error).message },
       { status: 500 }
     );
   }

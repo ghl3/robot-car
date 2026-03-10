@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 
-export default function CameraFeed({ robotIp, connected }) {
+interface CameraFeedProps {
+  robotIp: string | null;
+  connected: boolean;
+}
+
+export default function CameraFeed({ robotIp, connected }: CameraFeedProps) {
   const [error, setError] = useState(false);
 
   if (!connected) {

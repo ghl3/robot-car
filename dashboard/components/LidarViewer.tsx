@@ -2,22 +2,37 @@
 
 import { useRef, useEffect, useCallback } from "react";
 import { useTopic } from "@/hooks/useTopic";
+import type { Ros } from "roslib";
+import type { RosStatus } from "@/hooks/useRobot";
+
+interface LaserScan {
+  angle_min: number;
+  angle_increment: number;
+  ranges: number[];
+  range_min: number;
+  range_max: number;
+}
 
 const BG_COLOR = "#1a1a2e";
 const GRID_COLOR = "rgba(255, 255, 255, 0.06)";
 const CIRCLE_COLOR = "rgba(255, 255, 255, 0.1)";
 const POINT_COLOR = "#22c55e";
 
-export default function LidarViewer({ status, getRos }) {
-  const canvasRef = useRef(null);
-  const scanRef = useRef(null);
-  const animFrameRef = useRef(null);
+interface LidarViewerProps {
+  status: RosStatus;
+  getRos: () => Ros | null;
+}
+
+export default function LidarViewer({ status, getRos }: LidarViewerProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const scanRef = useRef<LaserScan | null>(null);
+  const animFrameRef = useRef<number | null>(null);
   const connected = status === "connected";
 
   const message = useTopic("/scan", "sensor_msgs/LaserScan", getRos, connected);
 
   useEffect(() => {
-    if (message) scanRef.current = message;
+    if (message) scanRef.current = message as unknown as LaserScan;
   }, [message]);
 
   const draw = useCallback(() => {
@@ -25,6 +40,7 @@ export default function LidarViewer({ status, getRos }) {
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
 

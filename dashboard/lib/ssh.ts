@@ -7,7 +7,21 @@ const DEFAULT_USER = "jetson";
 const DEFAULT_IP = "192.168.7.107";
 const SSH_TIMEOUT = 10000;
 
-function findPrivateKey() {
+interface ConnectOpts {
+  host: string;
+  username: string;
+  readyTimeout: number;
+  privateKeyPath?: string;
+  password?: string;
+}
+
+export interface CommandResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+function findPrivateKey(): string | null {
   const sshDir = join(homedir(), ".ssh");
   for (const name of ["id_ed25519", "id_rsa", "id_ecdsa"]) {
     const keyPath = join(sshDir, name);
@@ -16,8 +30,8 @@ function findPrivateKey() {
   return null;
 }
 
-function buildConnectOpts(ip) {
-  const opts = {
+function buildConnectOpts(ip?: string): ConnectOpts {
+  const opts: ConnectOpts = {
     host: ip || DEFAULT_IP,
     username: DEFAULT_USER,
     readyTimeout: SSH_TIMEOUT,
@@ -33,7 +47,7 @@ function buildConnectOpts(ip) {
   return opts;
 }
 
-export async function executeCommand(ip, command) {
+export async function executeCommand(ip: string, command: string): Promise<CommandResult> {
   const ssh = new NodeSSH();
   try {
     await ssh.connect(buildConnectOpts(ip));
@@ -50,7 +64,7 @@ export async function executeCommand(ip, command) {
   }
 }
 
-export async function getSSHConnection(ip) {
+export async function getSSHConnection(ip: string): Promise<NodeSSH> {
   const ssh = new NodeSSH();
   await ssh.connect(buildConnectOpts(ip));
   return ssh;

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { Ros, Topic } from "roslib";
 
-export function useTopic(topicName, messageType, getRos, connected) {
-  const [message, setMessage] = useState(null);
-  const listenerRef = useRef(null);
+export function useTopic(topicName: string, messageType: string, getRos: () => Ros | null, connected: boolean) {
+  const [message, setMessage] = useState<Record<string, unknown> | null>(null);
+  const listenerRef = useRef<Topic | null>(null);
 
   useEffect(() => {
     if (!connected) {

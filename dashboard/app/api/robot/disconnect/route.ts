@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { executeCommand } from "@/lib/ssh";
 
-export async function POST(request) {
+export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const ip = body.ip;
+    const ip = body.ip as string | undefined;
     if (!ip) {
       return NextResponse.json(
         { success: false, message: "IP address is required" },
@@ -31,7 +31,7 @@ export async function POST(request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { success: false, message: error.message },
+      { success: false, message: (error as Error).message },
       { status: 500 }
     );
   }

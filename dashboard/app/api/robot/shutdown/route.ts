@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { executeCommand } from "@/lib/ssh";
 
-export async function POST(request) {
+export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { action, ip } = body;
+    const { action, ip } = body as { action?: string; ip?: string };
 
     if (!ip) {
       return NextResponse.json(
@@ -35,7 +35,7 @@ export async function POST(request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { success: false, message: error.message },
+      { success: false, message: (error as Error).message },
       { status: 500 }
     );
   }

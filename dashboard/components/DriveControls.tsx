@@ -2,8 +2,16 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useKeyboardControls } from "@/hooks/useKeyboardControls";
+import type { RosStatus, PublishFn } from "@/hooks/useRobot";
 
-function DPadButton({ label, onStart, onStop, className = "" }) {
+interface DPadButtonProps {
+  label: string;
+  onStart: () => void;
+  onStop: () => void;
+  className?: string;
+}
+
+function DPadButton({ label, onStart, onStop, className = "" }: DPadButtonProps) {
   return (
     <button
       onMouseDown={onStart}
@@ -18,17 +26,22 @@ function DPadButton({ label, onStart, onStop, className = "" }) {
   );
 }
 
-export default function DriveControls({ publish, status }) {
+interface DriveControlsProps {
+  publish: PublishFn;
+  status: RosStatus;
+}
+
+export default function DriveControls({ publish, status }: DriveControlsProps) {
   const [speed, setSpeed] = useState(0.5);
   const [turnRate, setTurnRate] = useState(0.6);
   const [turnSpeed, setTurnSpeed] = useState(0.35);
-  const pressedRef = useRef(new Set());
+  const pressedRef = useRef(new Set<string>());
   const connected = status === "connected";
 
   useKeyboardControls(publish, status, speed, turnRate, turnSpeed);
 
   const sendCmd = useCallback(
-    (linearX, angularZ) => {
+    (linearX: number, angularZ: number) => {
       if (!connected) return;
       publish("/cmd_vel", "geometry_msgs/Twist", {
         linear: { x: linearX, y: 0, z: 0 },
@@ -41,7 +54,7 @@ export default function DriveControls({ publish, status }) {
   const stop = useCallback(() => sendCmd(0, 0), [sendCmd]);
 
   const startDirection = useCallback(
-    (dir) => {
+    (dir: string) => {
       pressedRef.current.add(dir);
       const p = pressedRef.current;
       let lx = 0, az = 0;
@@ -55,7 +68,7 @@ export default function DriveControls({ publish, status }) {
   );
 
   const stopDirection = useCallback(
-    (dir) => {
+    (dir: string) => {
       pressedRef.current.delete(dir);
       if (pressedRef.current.size === 0) {
         stop();

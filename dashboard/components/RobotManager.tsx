@@ -3,15 +3,26 @@
 import { useState, useEffect } from "react";
 import { getStoredIp, setStoredIp } from "@/lib/robot-config";
 import { useRobotManager } from "@/hooks/useRobotManager";
+import type { RosStatus } from "@/hooks/useRobot";
 
-function TempBadge({ temp }) {
+interface TempBadgeProps {
+  temp: number | null;
+}
+
+function TempBadge({ temp }: TempBadgeProps) {
   if (temp === null || temp === undefined) return null;
   const color =
     temp >= 80 ? "text-red-400" : temp >= 60 ? "text-yellow-400" : "text-green-400";
-  return <span className={`font-mono ${color}`}>{temp.toFixed(1)}°C</span>;
+  return <span className={`font-mono ${color}`}>{temp.toFixed(1)}&deg;C</span>;
 }
 
-function UsageBar({ label, percent, detail }) {
+interface UsageBarProps {
+  label: string;
+  percent: number | string;
+  detail?: string;
+}
+
+function UsageBar({ label, percent, detail }: UsageBarProps) {
   const pct = typeof percent === "string" ? parseInt(percent, 10) : percent;
   const color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-blue-500";
   return (
@@ -27,7 +38,14 @@ function UsageBar({ label, percent, detail }) {
   );
 }
 
-function ConfirmButton({ children, onConfirm, className, confirmText = "Confirm?" }) {
+interface ConfirmButtonProps {
+  children: React.ReactNode;
+  onConfirm: () => void;
+  className?: string;
+  confirmText?: string;
+}
+
+function ConfirmButton({ children, onConfirm, className, confirmText = "Confirm?" }: ConfirmButtonProps) {
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
@@ -53,7 +71,13 @@ function ConfirmButton({ children, onConfirm, className, confirmText = "Confirm?
   );
 }
 
-export default function RobotManager({ rosStatus, onConnect, onDisconnect }) {
+interface RobotManagerProps {
+  rosStatus: RosStatus;
+  onConnect: (ip: string) => void;
+  onDisconnect: () => void;
+}
+
+export default function RobotManager({ rosStatus, onConnect, onDisconnect }: RobotManagerProps) {
   const [ip, setIp] = useState("");
   const [expanded, setExpanded] = useState(true);
   const [wifiPassword, setWifiPassword] = useState("");
@@ -75,7 +99,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }) {
     startPolling,
     stopPolling,
   } = useRobotManager({
-    onServicesStarted: (connectedIp) => {
+    onServicesStarted: (connectedIp: string) => {
       setStoredIp(connectedIp);
       onConnect(connectedIp);
     },
@@ -114,7 +138,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }) {
     startPolling(trimmedIp);
   };
 
-  const statusDot = (active, label) => (
+  const statusDot = (active: boolean, label: string) => (
     <div className="flex items-center gap-2">
       <div className={`h-2 w-2 rounded-full ${active ? "bg-green-500" : "bg-zinc-600"}`} />
       <span className="text-xs text-zinc-400">{label}</span>

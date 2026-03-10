@@ -2,9 +2,14 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { setStoredIp } from "@/lib/robot-config";
+import type { Ros } from "roslib";
 
-let rosInstance = null;
-let ROSLIB = null;
+export type RosStatus = "disconnected" | "connecting" | "connected" | "reconnecting";
+
+export type PublishFn = (topicName: string, messageType: string, data: Record<string, unknown>) => void;
+
+let rosInstance: Ros | null = null;
+let ROSLIB: typeof import("roslib").default | null = null;
 
 async function getRoslib() {
   if (!ROSLIB) {
@@ -14,9 +19,9 @@ async function getRoslib() {
 }
 
 export function useRobot() {
-  const [status, setStatus] = useState("disconnected"); // disconnected | connecting | connected | reconnecting
-  const [ip, setIpState] = useState(null);
-  const reconnectTimer = useRef(null);
+  const [status, setStatus] = useState<RosStatus>("disconnected");
+  const [ip, setIpState] = useState<string | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectDelay = useRef(3000);
   const intentionalDisconnect = useRef(false);
   const statusRef = useRef(status);
@@ -40,7 +45,7 @@ export function useRobot() {
   }, []);
 
   const scheduleReconnect = useCallback(
-    (targetIp) => {
+    (targetIp: string) => {
       clearReconnect();
       const delay = Math.min(reconnectDelay.current, 30000);
       setStatus("reconnecting");
@@ -81,7 +86,7 @@ export function useRobot() {
   );
 
   const connect = useCallback(
-    async (targetIp) => {
+    async (targetIp: string) => {
       intentionalDisconnect.current = false;
       clearReconnect();
       setStatus("connecting");
@@ -130,7 +135,7 @@ export function useRobot() {
     setStatus("disconnected");
   }, [clearReconnect]);
 
-  const publish = useCallback(async (topicName, messageType, data) => {
+  const publish: PublishFn = useCallback(async (topicName, messageType, data) => {
     if (!rosInstance || !rosInstance.isConnected) return;
     const roslib = await getRoslib();
     const topic = new roslib.Topic({
@@ -141,5 +146,5 @@ export function useRobot() {
     topic.publish(new roslib.Message(data));
   }, []);
 
-  return { status, ip, connect, disconnect, publish, getRos: () => rosInstance };
+  return { status, ip, connect, disconnect, publish, getRos: (): Ros | null => rosInstance };
 }

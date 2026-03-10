@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
+import type { PublishFn, RosStatus } from "@/hooks/useRobot";
 
-const KEY_MAP = {
+const KEY_MAP: Record<string, string> = {
   w: "forward",
   arrowup: "forward",
   s: "backward",
@@ -14,13 +15,13 @@ const KEY_MAP = {
   " ": "stop",
 };
 
-export function useKeyboardControls(publish, status, speed = 0.5, turnRate = 0.6, turnSpeed = 0.35) {
-  const activeKeys = useRef(new Set());
+export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed = 0.5, turnRate = 0.6, turnSpeed = 0.35) {
+  const activeKeys = useRef(new Set<string>());
   const lastPublish = useRef(0);
-  const publishTimer = useRef(null);
+  const publishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendCommand = useCallback(
-    (linearX, angularZ) => {
+    (linearX: number, angularZ: number) => {
       publish("/cmd_vel", "geometry_msgs/Twist", {
         linear: { x: linearX, y: 0, z: 0 },
         angular: { x: 0, y: 0, z: angularZ },
@@ -68,9 +69,9 @@ export function useKeyboardControls(publish, status, speed = 0.5, turnRate = 0.6
   useEffect(() => {
     if (status !== "connected") return;
 
-    const onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       // Skip when typing in inputs
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
 
       const action = KEY_MAP[e.key.toLowerCase()];
       if (!action) return;
@@ -88,7 +89,7 @@ export function useKeyboardControls(publish, status, speed = 0.5, turnRate = 0.6
       }
     };
 
-    const onKeyUp = (e) => {
+    const onKeyUp = (e: KeyboardEvent) => {
       const action = KEY_MAP[e.key.toLowerCase()];
       if (!action || action === "stop") return;
       e.preventDefault();

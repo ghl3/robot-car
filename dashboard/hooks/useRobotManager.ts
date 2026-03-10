@@ -2,14 +2,42 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 
-export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp }) {
+interface SystemInfo {
+  cpuTemp: number | null;
+  memoryUsage: { totalMB: number; usedMB: number; percent: number } | null;
+  diskUsage: { size: string; used: string; available: string; percent: string } | null;
+  uptime: string;
+  ip: string;
+}
+
+interface WifiNetwork {
+  ssid: string;
+  signal: number;
+  security: string;
+}
+
+type LoadingState = "starting" | "stopping" | "rebooting" | "shutting-down" | null;
+
+interface ApiResponse {
+  success: boolean;
+  message?: string;
+  [key: string]: unknown;
+}
+
+interface UseRobotManagerOptions {
+  onServicesStarted?: (ip: string) => void;
+  onServicesStopped?: () => void;
+  robotIp: string;
+}
+
+export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp }: UseRobotManagerOptions) {
   const [servicesRunning, setServicesRunning] = useState(false);
-  const [systemInfo, setSystemInfo] = useState(null);
-  const [loading, setLoading] = useState(null); // null | "starting" | "stopping" | "rebooting" | "shutting-down"
-  const [error, setError] = useState(null);
-  const [wifiNetworks, setWifiNetworks] = useState([]);
-  const [currentNetwork, setCurrentNetwork] = useState(null);
-  const pollRef = useRef(null);
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [loading, setLoading] = useState<LoadingState>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [wifiNetworks, setWifiNetworks] = useState<WifiNetwork[]>([]);
+  const [currentNetwork, setCurrentNetwork] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ipRef = useRef(robotIp);
 
   useEffect(() => {
@@ -23,7 +51,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
     }
   }, []);
 
-  const fetchStatus = useCallback(async (ip) => {
+  const fetchStatus = useCallback(async (ip: string) => {
     try {
       const params = ip ? `?ip=${encodeURIComponent(ip)}` : "";
       const res = await fetch(`/api/robot/status${params}`);
@@ -38,7 +66,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
         });
         setServicesRunning(data.rosRunning);
         setError(null);
-        return data;
+        return data as ApiResponse;
       } else {
         setServicesRunning(false);
         setSystemInfo(null);
@@ -52,7 +80,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
   }, []);
 
   const startPolling = useCallback(
-    (ip) => {
+    (ip: string) => {
       clearPolling();
       fetchStatus(ip);
       pollRef.current = setInterval(() => fetchStatus(ip), 5000);
@@ -70,7 +98,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
   useEffect(() => clearPolling, [clearPolling]);
 
   const startServices = useCallback(
-    async (ip) => {
+    async (ip: string): Promise<ApiResponse> => {
       setLoading("starting");
       setError(null);
       try {
@@ -79,18 +107,19 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ip }),
         });
-        const data = await res.json();
+        const data: ApiResponse = await res.json();
         if (data.success) {
           setServicesRunning(true);
           startPolling(ip);
-          onServicesStarted?.(data.ip);
+          onServicesStarted?.(data.ip as string);
         } else {
-          setError(data.message);
+          setError(data.message ?? "Unknown error");
         }
         return data;
       } catch (err) {
-        setError(err.message);
-        return { success: false, message: err.message };
+        const message = (err as Error).message;
+        setError(message);
+        return { success: false, message };
       } finally {
         setLoading(null);
       }
@@ -99,7 +128,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
   );
 
   const stopServices = useCallback(
-    async (ip) => {
+    async (ip: string): Promise<ApiResponse> => {
       setLoading("stopping");
       setError(null);
       try {
@@ -109,17 +138,18 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ip }),
         });
-        const data = await res.json();
+        const data: ApiResponse = await res.json();
         if (data.success) {
           setServicesRunning(false);
           stopPolling();
         } else {
-          setError(data.message);
+          setError(data.message ?? "Unknown error");
         }
         return data;
       } catch (err) {
-        setError(err.message);
-        return { success: false, message: err.message };
+        const message = (err as Error).message;
+        setError(message);
+        return { success: false, message };
       } finally {
         setLoading(null);
       }
@@ -127,7 +157,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
     [onServicesStopped, stopPolling]
   );
 
-  const shutdown = useCallback(async (action, ip) => {
+  const shutdown = useCallback(async (action: string, ip: string): Promise<ApiResponse> => {
     setLoading(action === "shutdown" ? "shutting-down" : "rebooting");
     setError(null);
     try {
@@ -136,18 +166,19 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ip }),
       });
-      const data = await res.json();
-      if (!data.success) setError(data.message);
+      const data: ApiResponse = await res.json();
+      if (!data.success) setError(data.message ?? "Unknown error");
       return data;
     } catch (err) {
-      setError(err.message);
-      return { success: false, message: err.message };
+      const message = (err as Error).message;
+      setError(message);
+      return { success: false, message };
     } finally {
       setLoading(null);
     }
   }, []);
 
-  const getWifiNetworks = useCallback(async (ip) => {
+  const getWifiNetworks = useCallback(async (ip: string): Promise<ApiResponse> => {
     try {
       const params = ip ? `?ip=${encodeURIComponent(ip)}` : "";
       const res = await fetch(`/api/robot/wifi${params}`);
@@ -156,22 +187,22 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
         setWifiNetworks(data.networks || []);
         setCurrentNetwork(data.currentNetwork);
       }
-      return data;
+      return data as ApiResponse;
     } catch (err) {
-      return { success: false, message: err.message };
+      return { success: false, message: (err as Error).message };
     }
   }, []);
 
-  const connectWifi = useCallback(async (ssid, password, ip) => {
+  const connectWifi = useCallback(async (ssid: string, password: string, ip: string): Promise<ApiResponse> => {
     try {
       const res = await fetch("/api/robot/wifi", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ssid, password, ip }),
       });
-      return await res.json();
+      return await res.json() as ApiResponse;
     } catch (err) {
-      return { success: false, message: err.message };
+      return { success: false, message: (err as Error).message };
     }
   }, []);
 

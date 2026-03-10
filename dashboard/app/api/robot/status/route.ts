@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSSHConnection } from "@/lib/ssh";
+import type { NodeSSH } from "node-ssh";
 
-export async function GET(request) {
-  let ssh;
+export async function GET(request: Request) {
+  let ssh: NodeSSH | undefined;
   try {
     const { searchParams } = new URL(request.url);
     const ip = searchParams.get("ip");
@@ -38,7 +39,7 @@ export async function GET(request) {
     const cpuTemp = temps.length > 0 ? Math.max(...temps) : null;
 
     // Parse memory
-    let memoryUsage = null;
+    let memoryUsage: { totalMB: number; usedMB: number; percent: number } | null = null;
     const memLines = memResult.stdout.trim().split("\n");
     if (memLines.length >= 2) {
       const parts = memLines[1].split(/\s+/);
@@ -48,7 +49,7 @@ export async function GET(request) {
     }
 
     // Parse disk
-    let diskUsage = null;
+    let diskUsage: { size: string; used: string; available: string; percent: string } | null = null;
     const diskLines = diskResult.stdout.trim().split("\n");
     if (diskLines.length >= 2) {
       const parts = diskLines[1].split(/\s+/);
@@ -68,7 +69,7 @@ export async function GET(request) {
   } catch (error) {
     if (ssh) ssh.dispose();
     return NextResponse.json(
-      { success: false, sshReachable: false, message: error.message },
+      { success: false, sshReachable: false, message: (error as Error).message },
       { status: 500 }
     );
   }

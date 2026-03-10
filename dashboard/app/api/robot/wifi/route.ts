@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { executeCommand } from "@/lib/ssh";
 
-export async function GET(request) {
+interface WifiNetwork {
+  ssid: string;
+  signal: number;
+  security: string;
+}
+
+export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const ip = searchParams.get("ip");
@@ -17,7 +23,7 @@ export async function GET(request) {
       "nmcli -t -f SSID,SIGNAL,SECURITY dev wifi list --rescan yes 2>/dev/null"
     );
 
-    const networks = result.stdout
+    const networks: WifiNetwork[] = result.stdout
       .trim()
       .split("\n")
       .filter(Boolean)
@@ -26,7 +32,7 @@ export async function GET(request) {
         return { ssid, signal: parseInt(signal, 10) || 0, security: security || "Open" };
       })
       .filter((n) => n.ssid)
-      .reduce((acc, n) => {
+      .reduce<WifiNetwork[]>((acc, n) => {
         // Deduplicate by SSID, keeping strongest signal
         const existing = acc.find((e) => e.ssid === n.ssid);
         if (!existing) acc.push(n);
@@ -48,16 +54,16 @@ export async function GET(request) {
     return NextResponse.json({ success: true, networks, currentNetwork });
   } catch (error) {
     return NextResponse.json(
-      { success: false, message: error.message },
+      { success: false, message: (error as Error).message },
       { status: 500 }
     );
   }
 }
 
-export async function POST(request) {
+export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { ssid, password, ip } = body;
+    const { ssid, password, ip } = body as { ssid?: string; password?: string; ip?: string };
 
     if (!ip) {
       return NextResponse.json(
@@ -93,7 +99,7 @@ export async function POST(request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { success: false, message: error.message },
+      { success: false, message: (error as Error).message },
       { status: 500 }
     );
   }
