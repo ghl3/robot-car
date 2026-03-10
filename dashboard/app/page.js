@@ -2,6 +2,7 @@
 
 import { useRobot } from "@/hooks/useRobot";
 import ConnectionBar from "@/components/ConnectionBar";
+import RobotManager from "@/components/RobotManager";
 import CameraFeed from "@/components/CameraFeed";
 import LidarViewer from "@/components/LidarViewer";
 import DriveControls from "@/components/DriveControls";
@@ -16,12 +17,15 @@ export default function Home() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-white">JetRacer Dashboard</h1>
-          <ConnectionBar
-            status={status}
-            onConnect={connect}
-            onDisconnect={disconnect}
-          />
+          <ConnectionBar status={status} ip={ip} />
         </div>
+
+        {/* Robot Manager */}
+        <RobotManager
+          rosStatus={status}
+          onConnect={connect}
+          onDisconnect={disconnect}
+        />
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

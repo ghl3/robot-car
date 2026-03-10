@@ -45,16 +45,27 @@ ROSBRIDGE_PID=$!
 # Cleanup function
 cleanup() {
     echo "Stopping JetRacer processes..."
-    kill $WEB_SERVER_PID
-    kill $ROSBRIDGE_PID
-    kill $CAMERA_PID
-    kill $JETRACER_PID
-    kill $ROSCORE_PID
+    kill $WEB_SERVER_PID 2>/dev/null
+    kill $ROSBRIDGE_PID 2>/dev/null
+    kill $CAMERA_PID 2>/dev/null
+    kill $JETRACER_PID 2>/dev/null
+    kill $ROSCORE_PID 2>/dev/null
+    wait 2>/dev/null
     exit
 }
 
 # Set up trap
 trap cleanup SIGINT SIGTERM
+
+# Wait for rosbridge to be ready (max 30s)
+echo "Waiting for rosbridge..."
+for i in $(seq 1 30); do
+    if bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null; then
+        echo "rosbridge is ready"
+        break
+    fi
+    sleep 1
+done
 
 # Display access information
 echo "JetRacer running with camera and rosbridge. Press Ctrl+C to stop."
