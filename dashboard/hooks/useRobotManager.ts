@@ -24,6 +24,12 @@ interface ApiResponse {
   [key: string]: unknown;
 }
 
+interface StartupLog {
+  timestamp: string;
+  message: string;
+  isError?: boolean;
+}
+
 interface UseRobotManagerOptions {
   onServicesStarted?: (ip: string) => void;
   onServicesStopped?: () => void;
@@ -37,6 +43,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
   const [error, setError] = useState<string | null>(null);
   const [wifiNetworks, setWifiNetworks] = useState<WifiNetwork[]>([]);
   const [currentNetwork, setCurrentNetwork] = useState<string | null>(null);
+  const [startupLogs, setStartupLogs] = useState<StartupLog[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ipRef = useRef(robotIp);
 
@@ -97,34 +104,92 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
   // Cleanup on unmount
   useEffect(() => clearPolling, [clearPolling]);
 
+  const clearStartupLogs = useCallback(() => {
+    setStartupLogs([]);
+  }, []);
+
+  const appendLog = useCallback((message: string, isError = false) => {
+    const now = new Date();
+    const timestamp = now.toTimeString().split(" ")[0] + "." + String(now.getMilliseconds()).padStart(3, "0");
+    setStartupLogs((prev) => [...prev, { timestamp, message, isError }]);
+  }, []);
+
   const startServices = useCallback(
     async (ip: string): Promise<ApiResponse> => {
       setLoading("starting");
       setError(null);
+      setStartupLogs([]);
+
       try {
         const res = await fetch("/api/robot/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ip }),
         });
-        const data: ApiResponse = await res.json();
-        if (data.success) {
-          setServicesRunning(true);
-          startPolling(ip);
-          onServicesStarted?.(data.ip as string);
-        } else {
-          setError(data.message ?? "Unknown error");
+
+        // Check if it's an SSE stream or a regular JSON response (e.g. 400 error)
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("text/event-stream")) {
+          const data: ApiResponse = await res.json();
+          if (!data.success) {
+            appendLog(data.message ?? "Unknown error", true);
+          }
+          return data;
         }
-        return data;
+
+        // Parse SSE stream
+        const reader = res.body?.getReader();
+        if (!reader) {
+          const msg = "Failed to read response stream";
+          appendLog(msg, true);
+          return { success: false, message: msg };
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let result: ApiResponse = { success: false };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.type === "log") {
+                appendLog(data.message);
+              } else if (data.type === "complete") {
+                result = data as ApiResponse;
+                if (data.success) {
+                  appendLog(data.message || "Connected successfully.");
+                  setServicesRunning(true);
+                  startPolling(ip);
+                  onServicesStarted?.(data.ip as string);
+                } else {
+                  appendLog(data.message ?? "Unknown error", true);
+                }
+              }
+            } catch {
+              // Skip malformed SSE lines
+            }
+          }
+        }
+
+        return result;
       } catch (err) {
         const message = (err as Error).message;
-        setError(message);
+        appendLog(message, true);
         return { success: false, message };
       } finally {
         setLoading(null);
       }
     },
-    [onServicesStarted, startPolling]
+    [onServicesStarted, startPolling, appendLog]
   );
 
   const stopServices = useCallback(
@@ -213,6 +278,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
     error,
     wifiNetworks,
     currentNetwork,
+    startupLogs,
     startServices,
     stopServices,
     shutdown,
@@ -221,5 +287,6 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
     fetchStatus,
     startPolling,
     stopPolling,
+    clearStartupLogs,
   };
 }

@@ -1,27 +1,21 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import { Share_Tech_Mono } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const shareTechMono = Share_Tech_Mono({
+  weight: "400",
+  variable: "--font-mono",
   subsets: ["latin"],
 });
 
 export const metadata = {
-  title: "JetRacer Dashboard",
+  title: "JETRACER // COMMAND CONSOLE",
   description: "Control dashboard for JetRacer robot",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${shareTechMono.variable} antialiased`}>
         {children}
       </body>
     </html>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { getStoredIp, setStoredIp } from "@/lib/robot-config";
 import { useRobotManager } from "@/hooks/useRobotManager";
 import type { RosStatus } from "@/hooks/useRobot";
@@ -12,7 +12,11 @@ interface TempBadgeProps {
 function TempBadge({ temp }: TempBadgeProps) {
   if (temp === null || temp === undefined) return null;
   const color =
-    temp >= 80 ? "text-red-400" : temp >= 60 ? "text-yellow-400" : "text-green-400";
+    temp >= 80
+      ? "text-accent-red"
+      : temp >= 60
+        ? "text-accent-amber"
+        : "text-accent-green";
   return <span className={`font-mono ${color}`}>{temp.toFixed(1)}&deg;C</span>;
 }
 
@@ -24,14 +28,19 @@ interface UsageBarProps {
 
 function UsageBar({ label, percent, detail }: UsageBarProps) {
   const pct = typeof percent === "string" ? parseInt(percent, 10) : percent;
-  const color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-blue-500";
+  const color =
+    pct >= 90
+      ? "bg-accent-red"
+      : pct >= 70
+        ? "bg-accent-amber"
+        : "bg-accent-green";
   return (
     <div>
-      <div className="flex justify-between text-xs text-zinc-400 mb-1">
+      <div className="flex justify-between text-xs text-text-dim mb-1">
         <span>{label}</span>
         <span>{detail || `${pct}%`}</span>
       </div>
-      <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+      <div className="h-2 bg-input-bg rounded-full overflow-hidden border border-panel-border/50">
         <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -83,14 +92,16 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
   const [wifiPassword, setWifiPassword] = useState("");
   const [selectedSsid, setSelectedSsid] = useState("");
   const [showWifi, setShowWifi] = useState(false);
+  const [logsExpanded, setLogsExpanded] = useState(true);
+  const logContainerRef = useRef<HTMLDivElement>(null);
 
   const {
     servicesRunning,
     systemInfo,
     loading,
-    error,
     wifiNetworks,
     currentNetwork,
+    startupLogs,
     startServices,
     stopServices,
     shutdown,
@@ -98,6 +109,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
     connectWifi,
     startPolling,
     stopPolling,
+    clearStartupLogs,
   } = useRobotManager({
     onServicesStarted: (connectedIp: string) => {
       setStoredIp(connectedIp);
@@ -113,6 +125,12 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
   useEffect(() => {
     setIp(getStoredIp());
   }, []);
+
+  // Auto-scroll log panel (scroll container only, not the page)
+  useEffect(() => {
+    const el = logContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [startupLogs]);
 
   const isConnected = rosStatus === "connected" || rosStatus === "reconnecting";
   const isBusy = loading !== null;
@@ -140,20 +158,26 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
 
   const statusDot = (active: boolean, label: string) => (
     <div className="flex items-center gap-2">
-      <div className={`h-2 w-2 rounded-full ${active ? "bg-green-500" : "bg-zinc-600"}`} />
-      <span className="text-xs text-zinc-400">{label}</span>
+      <div
+        className={`h-3 w-3 rounded-full ${
+          active
+            ? "bg-accent-green shadow-[0_0_6px_theme(--color-accent-green)]"
+            : "bg-input-bg border border-panel-border"
+        }`}
+      />
+      <span className="text-xs text-text-dim">{label}</span>
     </div>
   );
 
   return (
-    <div className="rounded-lg bg-zinc-900 border border-zinc-800 overflow-hidden">
+    <div className="bg-panel border border-panel-border rounded overflow-hidden shadow-sm">
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-800/50 transition-colors"
+        className="w-full flex items-center justify-between bg-panel-header px-4 py-2 hover:brightness-110 transition-all"
       >
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-white">Robot Manager</h2>
+          <h2 className="text-xs font-semibold text-panel-header-text uppercase tracking-widest">Robot Manager</h2>
           <div className="flex items-center gap-3">
             {statusDot(systemInfo !== null, "SSH")}
             {statusDot(servicesRunning, "ROS")}
@@ -161,7 +185,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
           </div>
         </div>
         <svg
-          className={`w-4 h-4 text-zinc-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+          className={`w-4 h-4 text-panel-header-text/70 transition-transform ${expanded ? "rotate-180" : ""}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -171,7 +195,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
       </button>
 
       {expanded && (
-        <div className="px-4 pb-4 space-y-4 border-t border-zinc-800">
+        <div className="px-4 pb-4 space-y-4 border-t border-panel-border">
           {/* Connection Section */}
           <div className="pt-3 space-y-3">
             <div className="flex items-center gap-2">
@@ -181,26 +205,26 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                 onChange={(e) => setIp(e.target.value)}
                 placeholder="Robot IP"
                 disabled={isBusy}
-                className="rounded bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-white placeholder-zinc-500 w-44 disabled:opacity-50"
+                className="rounded bg-input-bg border border-input-border px-3 py-1.5 text-sm text-foreground placeholder-text-dim w-44 disabled:opacity-50"
               />
               <button
                 onClick={handlePowerOn}
                 disabled={isBusy || !ip.trim()}
-                className="rounded px-4 py-1.5 text-sm font-medium bg-green-600 hover:bg-green-500 text-white disabled:opacity-50 transition-colors"
+                className="rounded px-4 py-1.5 text-sm font-medium bg-accent-red hover:bg-accent-red-bright text-white disabled:opacity-50 transition-colors shadow-sm"
               >
                 {loading === "starting" ? "Starting..." : "Power On"}
               </button>
               <button
                 onClick={handlePowerOff}
                 disabled={isBusy || (!servicesRunning && !isConnected)}
-                className="rounded px-4 py-1.5 text-sm font-medium bg-zinc-700 hover:bg-zinc-600 text-white disabled:opacity-50 transition-colors"
+                className="rounded px-4 py-1.5 text-sm font-medium bg-input-bg border border-panel-border hover:bg-panel-border text-text-label disabled:opacity-50 transition-colors"
               >
                 {loading === "stopping" ? "Stopping..." : "Power Off"}
               </button>
               <button
                 onClick={handleCheckStatus}
                 disabled={isBusy || !ip.trim()}
-                className="rounded px-3 py-1.5 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                className="rounded px-3 py-1.5 text-sm text-text-dim hover:text-foreground hover:bg-input-bg transition-colors"
                 title="Check status"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -209,23 +233,60 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
               </button>
             </div>
 
-            {error && (
-              <div className="text-xs text-red-400 bg-red-950/50 border border-red-900/50 rounded px-3 py-2">
-                {error}
-              </div>
-            )}
           </div>
+
+          {/* Startup Log Panel */}
+          {(loading === "starting" || startupLogs.length > 0) && (
+            <div className="bg-input-bg border border-panel-border rounded overflow-hidden">
+              <button
+                onClick={() => setLogsExpanded(!logsExpanded)}
+                className="w-full bg-panel-header border-b border-panel-border uppercase tracking-widest text-xs text-panel-header-text px-4 py-2 flex items-center justify-between hover:brightness-110 transition-all"
+              >
+                <span>SYSTEM LOG</span>
+                <div className="flex items-center gap-2">
+                  {loading !== "starting" && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); clearStartupLogs(); }}
+                      className="text-panel-header-text/70 hover:text-panel-header-text normal-case tracking-normal"
+                    >
+                      Clear
+                    </span>
+                  )}
+                  <svg
+                    className={`w-3 h-3 text-panel-header-text/70 transition-transform ${logsExpanded ? "rotate-180" : ""}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </button>
+              {logsExpanded && (
+                <div ref={logContainerRef} className="h-48 overflow-y-auto p-3 font-mono text-xs">
+                  {startupLogs.map((log, i) => (
+                    <div key={i} className={log.isError ? "text-accent-red" : "text-foreground"}>
+                      <span className={log.isError ? "text-accent-red/70" : "text-accent-gold"}>[{log.timestamp}]</span> {log.message}
+                    </div>
+                  ))}
+                  {loading === "starting" && (
+                    <span className="text-accent-amber animate-pulse">_</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* System Info */}
           {systemInfo && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="bg-zinc-800/50 rounded p-3">
-                <div className="text-xs text-zinc-500 mb-1">CPU Temp</div>
+              <div className="bg-input-bg border border-panel-border rounded p-3">
+                <div className="text-xs text-text-dim mb-1">CPU Temp</div>
                 <TempBadge temp={systemInfo.cpuTemp} />
               </div>
               {systemInfo.memoryUsage && (
-                <div className="bg-zinc-800/50 rounded p-3">
-                  <div className="text-xs text-zinc-500 mb-1">Memory</div>
+                <div className="bg-input-bg border border-panel-border rounded p-3">
+                  <div className="text-xs text-text-dim mb-1">Memory</div>
                   <UsageBar
                     label=""
                     percent={systemInfo.memoryUsage.percent}
@@ -234,8 +295,8 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                 </div>
               )}
               {systemInfo.diskUsage && (
-                <div className="bg-zinc-800/50 rounded p-3">
-                  <div className="text-xs text-zinc-500 mb-1">Disk</div>
+                <div className="bg-input-bg border border-panel-border rounded p-3">
+                  <div className="text-xs text-text-dim mb-1">Disk</div>
                   <UsageBar
                     label=""
                     percent={systemInfo.diskUsage.percent}
@@ -243,9 +304,9 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                   />
                 </div>
               )}
-              <div className="bg-zinc-800/50 rounded p-3">
-                <div className="text-xs text-zinc-500 mb-1">Uptime</div>
-                <span className="text-sm text-zinc-300">{systemInfo.uptime}</span>
+              <div className="bg-input-bg border border-panel-border rounded p-3">
+                <div className="text-xs text-text-dim mb-1">Uptime</div>
+                <span className="text-sm text-foreground">{systemInfo.uptime}</span>
               </div>
             </div>
           )}
@@ -256,7 +317,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
               <ConfirmButton
                 onConfirm={() => shutdown("reboot", ip.trim())}
                 confirmText="Confirm Reboot?"
-                className="rounded px-3 py-1.5 text-xs font-medium bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30 transition-colors"
+                className="rounded px-3 py-1.5 text-xs font-medium bg-accent-amber/20 text-accent-amber hover:bg-accent-amber/30 transition-colors"
               >
                 Reboot
               </ConfirmButton>
@@ -267,7 +328,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                   shutdown("shutdown", ip.trim());
                 }}
                 confirmText="Confirm Shutdown?"
-                className="rounded px-3 py-1.5 text-xs font-medium bg-red-600/20 text-red-400 hover:bg-red-600/30 transition-colors"
+                className="rounded px-3 py-1.5 text-xs font-medium bg-accent-red/15 text-accent-red hover:bg-accent-red/25 transition-colors"
               >
                 Shutdown
               </ConfirmButton>
@@ -276,7 +337,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                   setShowWifi(!showWifi);
                   if (!showWifi) getWifiNetworks(ip.trim());
                 }}
-                className="rounded px-3 py-1.5 text-xs font-medium bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors ml-auto"
+                className="rounded px-3 py-1.5 text-xs font-medium bg-input-bg border border-panel-border text-text-dim hover:text-foreground hover:bg-panel-border transition-colors ml-auto"
               >
                 {showWifi ? "Hide WiFi" : "WiFi"}
               </button>
@@ -285,16 +346,16 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
 
           {/* WiFi Panel */}
           {showWifi && systemInfo && (
-            <div className="bg-zinc-800/30 rounded-lg p-3 space-y-3">
+            <div className="bg-input-bg border border-panel-border rounded p-3 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-zinc-300">WiFi Networks</span>
+                <span className="text-xs font-medium text-text-label">WiFi Networks</span>
                 {currentNetwork && (
-                  <span className="text-xs text-green-400">Connected: {currentNetwork}</span>
+                  <span className="text-xs text-accent-green">Connected: {currentNetwork}</span>
                 )}
               </div>
               <div className="max-h-40 overflow-y-auto space-y-1">
                 {wifiNetworks.length === 0 && (
-                  <div className="text-xs text-zinc-500">No networks found</div>
+                  <div className="text-xs text-text-dim">No networks found</div>
                 )}
                 {wifiNetworks.map((net) => (
                   <button
@@ -302,13 +363,13 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                     onClick={() => setSelectedSsid(net.ssid === selectedSsid ? "" : net.ssid)}
                     className={`w-full flex items-center justify-between px-2 py-1.5 rounded text-xs transition-colors ${
                       selectedSsid === net.ssid
-                        ? "bg-zinc-700 text-white"
-                        : "hover:bg-zinc-800 text-zinc-400"
+                        ? "bg-panel-border/50 text-foreground"
+                        : "hover:bg-panel-border/30 text-text-dim"
                     }`}
                   >
                     <span>{net.ssid}</span>
                     <span className="flex items-center gap-2">
-                      <span className="text-zinc-500">{net.security}</span>
+                      <span className="text-text-dim">{net.security}</span>
                       <span>{net.signal}%</span>
                     </span>
                   </button>
@@ -321,7 +382,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                     value={wifiPassword}
                     onChange={(e) => setWifiPassword(e.target.value)}
                     placeholder="Password (if needed)"
-                    className="flex-1 rounded bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-white placeholder-zinc-500"
+                    className="flex-1 rounded bg-panel border border-panel-border px-2 py-1 text-xs text-foreground placeholder-text-dim"
                   />
                   <button
                     onClick={async () => {
@@ -332,7 +393,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                         getWifiNetworks(ip.trim());
                       }
                     }}
-                    className="rounded px-3 py-1 text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                    className="rounded px-3 py-1 text-xs font-medium bg-accent-red hover:bg-accent-red-bright text-white transition-colors"
                   >
                     Connect to {selectedSsid}
                   </button>

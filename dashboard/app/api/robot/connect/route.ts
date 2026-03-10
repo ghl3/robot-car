@@ -7,6 +7,16 @@ import { getSSHConnection, executeCommand } from "@/lib/ssh";
 const START_SCRIPT = [
   "#!/bin/bash",
   "",
+  "# Auto-install missing ROS packages",
+  "if ! dpkg -l | grep -q ros-melodic-rosbridge-suite; then",
+  "    sudo apt-get update",
+  "    sudo apt-get install -y ros-melodic-rosbridge-suite",
+  "fi",
+  "if ! dpkg -l | grep -q ros-melodic-web-video-server; then",
+  "    sudo apt-get update",
+  "    sudo apt-get install -y ros-melodic-web-video-server",
+  "fi",
+  "",
   "source /opt/ros/melodic/setup.bash",
   "source ~/catkin_ws/devel/setup.bash",
   "",
@@ -54,111 +64,159 @@ const START_SCRIPT = [
   "done",
 ].join("\n");
 
+function sseEvent(data: Record<string, unknown>): string {
+  return `data: ${JSON.stringify(data)}\n\n`;
+}
+
 export async function POST(request: Request) {
-  let ssh: Awaited<ReturnType<typeof getSSHConnection>> | null = null;
-  try {
-    const body = await request.json().catch(() => ({}));
-    const ip = body.ip as string | undefined;
-    if (!ip) {
-      return NextResponse.json(
-        { success: false, message: "IP address is required" },
-        { status: 400 }
-      );
-    }
+  const body = await request.json().catch(() => ({}));
+  const ip = body.ip as string | undefined;
 
-    // First check if services are already running
-    try {
-      const check = await executeCommand(
-        ip,
-        "bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null"
-      );
-      if (check.exitCode === 0) {
-        return NextResponse.json({
-          success: true,
-          ip,
-          rosbridgeUp: true,
-          message: "Services are already running",
-        });
-      }
-    } catch {
-      // Not running, proceed to start
-    }
-
-    // Check that required packages are installed before trying to start
-    const depCheck = await executeCommand(
-      ip,
-      "dpkg -s ros-melodic-rosbridge-suite ros-melodic-web-video-server 2>&1"
-    );
-    if (depCheck.exitCode !== 0) {
-      const missing = depCheck.stderr || depCheck.stdout;
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Missing ROS packages on Jetson. SSH in and run:\nsudo apt-get install -y ros-melodic-rosbridge-suite ros-melodic-web-video-server\n\n${missing}`,
-        },
-        { status: 500 }
-      );
-    }
-
-    ssh = await getSSHConnection(ip);
-
-    // Upload start script
-    const remotePath = "/tmp/start_jetracer.sh";
-    await ssh.execCommand(
-      `cat > ${remotePath} << 'SCRIPT_EOF'\n${START_SCRIPT}\nSCRIPT_EOF`
-    );
-    await ssh.execCommand(`chmod +x ${remotePath}`);
-
-    // Run with nohup + disown so it persists after SSH disconnects
-    await ssh.execCommand(
-      `nohup bash ${remotePath} > /tmp/jetracer.log 2>&1 & disown`,
-      { execOptions: { pty: true } }
-    );
-    ssh.dispose();
-    ssh = null;
-
-    // Poll for rosbridge to come up (max 45s — roscore needs ~5s, then services start)
-    let rosbridgeUp = false;
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < 45000) {
-      await new Promise((r) => setTimeout(r, 3000));
-      try {
-        const result = await executeCommand(
-          ip,
-          "bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null"
-        );
-        if (result.exitCode === 0) {
-          rosbridgeUp = true;
-          break;
-        }
-      } catch {
-        // Jetson may be busy starting up, keep trying
-      }
-    }
-
-    // If not up, grab the log for debugging
-    let logTail = "";
-    if (!rosbridgeUp) {
-      try {
-        const log = await executeCommand(ip, "tail -20 /tmp/jetracer.log 2>/dev/null");
-        logTail = log.stdout;
-      } catch {}
-    }
-
-    return NextResponse.json({
-      success: rosbridgeUp,
-      ip,
-      rosbridgeUp,
-      message: rosbridgeUp
-        ? "Services started and rosbridge is ready"
-        : `Services may not have started correctly. Log:\n${logTail}`,
-    });
-  } catch (error) {
-    if (ssh) ssh.dispose();
+  if (!ip) {
     return NextResponse.json(
-      { success: false, message: (error as Error).message },
-      { status: 500 }
+      { success: false, message: "IP address is required" },
+      { status: 400 }
     );
   }
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: Record<string, unknown>) => {
+        controller.enqueue(new TextEncoder().encode(sseEvent(data)));
+      };
+      const log = (message: string) => send({ type: "log", message });
+
+      let ssh: Awaited<ReturnType<typeof getSSHConnection>> | null = null;
+
+      try {
+        // Check if services are already running (also verifies SSH connectivity)
+        log("Connecting to robot via SSH...");
+        let sshReachable = false;
+        try {
+          const check = await executeCommand(
+            ip,
+            "bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null"
+          );
+          sshReachable = true;
+          if (check.exitCode === 0) {
+            log("Services are already running!");
+            send({
+              type: "complete",
+              success: true,
+              ip,
+              rosbridgeUp: true,
+              message: "Services are already running",
+            });
+            controller.close();
+            return;
+          }
+          log("SSH connected. Services not yet running.");
+        } catch (err) {
+          // If SSH itself failed, robot is unreachable
+          const msg = (err as Error).message || String(err);
+          if (msg.includes("Timed out") || msg.includes("ECONNREFUSED") || msg.includes("EHOSTUNREACH") || msg.includes("ENOTFOUND")) {
+            log(`Cannot reach robot: ${msg}`);
+            send({
+              type: "complete",
+              success: false,
+              message: `Cannot connect to robot at ${ip} — ${msg}`,
+            });
+            controller.close();
+            return;
+          }
+          // SSH connected but the port-check command itself failed — that's fine, services aren't running
+          sshReachable = true;
+          log("SSH connected. Services not yet running.");
+        }
+
+        // Connect via SSH (reuse connection for script upload)
+        log("Preparing startup script...");
+        ssh = await getSSHConnection(ip);
+
+        // Upload startup script
+        log("Uploading startup script...");
+        const remotePath = "/tmp/start_jetracer.sh";
+        await ssh.execCommand(
+          `cat > ${remotePath} << 'SCRIPT_EOF'\n${START_SCRIPT}\nSCRIPT_EOF`
+        );
+        await ssh.execCommand(`chmod +x ${remotePath}`);
+
+        // Launch services (script auto-installs missing packages, which can take a while)
+        log("Launching JetRacer services (installing missing packages if needed)...");
+        await ssh.execCommand(
+          `nohup bash ${remotePath} > /tmp/jetracer.log 2>&1 & disown`,
+          { execOptions: { pty: true } }
+        );
+        ssh.dispose();
+        ssh = null;
+
+        // Poll for rosbridge (90s timeout — apt-get install can take a while on first run)
+        let rosbridgeUp = false;
+        const startTime = Date.now();
+        const timeoutMs = 90000;
+        let attempt = 0;
+        const maxAttempts = Math.ceil(timeoutMs / 3000);
+
+        while (Date.now() - startTime < timeoutMs) {
+          await new Promise((r) => setTimeout(r, 3000));
+          attempt++;
+          log(`Waiting for rosbridge... (attempt ${attempt}/${maxAttempts})`);
+          try {
+            const result = await executeCommand(
+              ip,
+              "bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null"
+            );
+            if (result.exitCode === 0) {
+              rosbridgeUp = true;
+              break;
+            }
+          } catch {
+            // Jetson may be busy starting up, keep trying
+          }
+        }
+
+        if (rosbridgeUp) {
+          log("Rosbridge is ready!");
+          send({
+            type: "complete",
+            success: true,
+            ip,
+            rosbridgeUp: true,
+            message: "Services started and rosbridge is ready",
+          });
+        } else {
+          let logTail = "";
+          try {
+            const logResult = await executeCommand(ip, "tail -20 /tmp/jetracer.log 2>/dev/null");
+            logTail = logResult.stdout;
+          } catch {}
+          log("Rosbridge did not come up in time.");
+          send({
+            type: "complete",
+            success: false,
+            ip,
+            rosbridgeUp: false,
+            message: `Services may not have started correctly. Log:\n${logTail}`,
+          });
+        }
+      } catch (error) {
+        if (ssh) ssh.dispose();
+        send({
+          type: "complete",
+          success: false,
+          message: (error as Error).message,
+        });
+      }
+
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
 }

@@ -12,11 +12,13 @@ export default function Home() {
   const connected = status === "connected";
 
   return (
-    <div className="min-h-screen bg-zinc-950 p-4 md:p-6">
+    <div className="min-h-screen bg-background p-4 md:p-6">
       <div className="max-w-7xl mx-auto flex flex-col gap-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold text-white">JetRacer Dashboard</h1>
+          <h1 className="text-xl font-bold text-accent-red uppercase tracking-widest">
+            JETRACER // COMMAND CONSOLE
+          </h1>
           <ConnectionBar status={status} ip={ip} />
         </div>
 

@@ -1,19 +1,127 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  /* Clean white with just a hint of warmth — the radio grille face */
+  --background: #f2ede8;
+  --foreground: #1a1210;
+
+  /* Panel surfaces — near-white */
+  --panel: #f7f4f0;
+  --panel-border: #c4a060;
+  --panel-header: #d03020;
+  --panel-header-text: #ffffff;
+
+  /* Bold RCA red */
+  --accent-red: #d03020;
+  --accent-red-bright: #e04030;
+  --accent-red-dim: #8b2218;
+
+  /* Brass / gold dial accents */
+  --accent-gold: #b8952a;
+  --accent-gold-dim: #9a7d22;
+
+  /* Status */
+  --accent-green: #2e7d32;
+  --accent-amber: #c48820;
+
+  /* Text hierarchy — darker for contrast */
+  --text-dim: #5c5048;
+  --text-label: #3a322a;
+
+  /* Recessed inputs */
+  --input-bg: #ece7e0;
+  --input-border: #c4a060;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-panel: var(--panel);
+  --color-panel-border: var(--panel-border);
+  --color-panel-header: var(--panel-header);
+  --color-panel-header-text: var(--panel-header-text);
+  --color-accent-red: var(--accent-red);
+  --color-accent-red-bright: var(--accent-red-bright);
+  --color-accent-red-dim: var(--accent-red-dim);
+  --color-accent-gold: var(--accent-gold);
+  --color-accent-gold-dim: var(--accent-gold-dim);
+  --color-accent-green: var(--accent-green);
+  --color-accent-amber: var(--accent-amber);
+  --color-text-dim: var(--text-dim);
+  --color-text-label: var(--text-label);
+  --color-input-bg: var(--input-bg);
+  --color-input-border: var(--input-border);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-mono), monospace;
+}
+
+/* Subtle horizontal grille lines — like the radio speaker */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(160, 140, 110, 0.035) 3px,
+    rgba(160, 140, 110, 0.035) 4px
+  );
+}
+
+/* Custom range input — gold/brass knob feel */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: var(--input-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 3px;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d4aa40, #b8952a);
+  cursor: pointer;
+  border: 2px solid #9a7d22;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #d4aa40, #b8952a);
+  cursor: pointer;
+  border: 2px solid #9a7d22;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Custom scrollbar — warm tones */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--input-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--panel-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-gold);
 }

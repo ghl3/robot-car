@@ -13,10 +13,14 @@ interface LaserScan {
   range_max: number;
 }
 
-const BG_COLOR = "#1a1a2e";
-const GRID_COLOR = "rgba(255, 255, 255, 0.06)";
-const CIRCLE_COLOR = "rgba(255, 255, 255, 0.1)";
-const POINT_COLOR = "#22c55e";
+// Warm cream background matching the panel
+const BG_COLOR = "#ece7e0";
+// Gold/brass grid and circles like dial markings
+const GRID_COLOR = "rgba(180, 150, 80, 0.15)";
+const CIRCLE_COLOR = "rgba(180, 150, 80, 0.25)";
+// Points in warm red — like indicator lights
+const POINT_COLOR = "#c43020";
+const LABEL_COLOR = "rgba(90, 74, 56, 0.5)";
 
 interface LidarViewerProps {
   status: RosStatus;
@@ -75,7 +79,7 @@ export default function LidarViewer({ status, getRos }: LidarViewerProps) {
     }
     ctx.stroke();
 
-    // Distance circles
+    // Distance circles — like dial rings
     ctx.strokeStyle = CIRCLE_COLOR;
     ctx.lineWidth = 1;
     for (let r = 1; r <= 6; r++) {
@@ -85,16 +89,16 @@ export default function LidarViewer({ status, getRos }: LidarViewerProps) {
     }
 
     // Label circles
-    ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
-    ctx.font = "10px sans-serif";
+    ctx.fillStyle = LABEL_COLOR;
+    ctx.font = "10px monospace";
     for (let r = 1; r <= 6; r++) {
       ctx.fillText(`${r}m`, centerX + r * scale + 3, centerY - 3);
     }
 
-    // Robot position marker
-    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+    // Robot position marker — brass dot
+    ctx.fillStyle = "#b8952a";
     ctx.beginPath();
-    ctx.arc(centerX, centerY, 3, 0, 2 * Math.PI);
+    ctx.arc(centerX, centerY, 4, 0, 2 * Math.PI);
     ctx.fill();
 
     // LIDAR points
@@ -112,7 +116,7 @@ export default function LidarViewer({ status, getRos }: LidarViewerProps) {
         const y = centerY + Math.sin(angle) * range * scale;
 
         ctx.beginPath();
-        ctx.arc(x, y, 2, 0, 2 * Math.PI);
+        ctx.arc(x, y, 2.5, 0, 2 * Math.PI);
         ctx.fill();
       }
     }
@@ -128,17 +132,22 @@ export default function LidarViewer({ status, getRos }: LidarViewerProps) {
   }, [draw]);
 
   return (
-    <div className="relative bg-zinc-900 rounded-lg border border-zinc-800 overflow-hidden">
-      <canvas
-        ref={canvasRef}
-        className="w-full aspect-square"
-        style={{ display: "block" }}
-      />
-      {!connected && (
-        <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/80">
-          <span className="text-zinc-500">LIDAR — Not connected</span>
-        </div>
-      )}
+    <div className="bg-panel border border-panel-border rounded overflow-hidden shadow-sm">
+      <div className="bg-panel-header border-b border-panel-border uppercase tracking-widest text-xs text-panel-header-text px-4 py-2">
+        LIDAR SCANNER
+      </div>
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          className="w-full aspect-square"
+          style={{ display: "block" }}
+        />
+        {!connected && (
+          <div className="absolute inset-0 flex items-center justify-center bg-input-bg/80">
+            <span className="text-text-dim uppercase tracking-wider">NO SIGNAL</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
