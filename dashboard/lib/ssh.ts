@@ -4,8 +4,14 @@ import { join } from "path";
 import { homedir } from "os";
 
 const DEFAULT_USER = "jetson";
+const DEFAULT_PASS = "jetson";
 const DEFAULT_IP = "192.168.7.107";
 const SSH_TIMEOUT = 10000;
+
+export interface SSHCredentials {
+  username?: string;
+  password?: string;
+}
 
 interface ConnectOpts {
   host: string;
@@ -30,10 +36,10 @@ function findPrivateKey(): string | null {
   return null;
 }
 
-function buildConnectOpts(ip?: string): ConnectOpts {
+function buildConnectOpts(ip?: string, creds?: SSHCredentials): ConnectOpts {
   const opts: ConnectOpts = {
     host: ip || DEFAULT_IP,
-    username: DEFAULT_USER,
+    username: creds?.username || DEFAULT_USER,
     readyTimeout: SSH_TIMEOUT,
   };
 
@@ -41,16 +47,16 @@ function buildConnectOpts(ip?: string): ConnectOpts {
   if (privateKey) {
     opts.privateKeyPath = privateKey;
   } else {
-    opts.password = DEFAULT_USER;
+    opts.password = creds?.password || DEFAULT_PASS;
   }
 
   return opts;
 }
 
-export async function executeCommand(ip: string, command: string): Promise<CommandResult> {
+export async function executeCommand(ip: string, command: string, creds?: SSHCredentials): Promise<CommandResult> {
   const ssh = new NodeSSH();
   try {
-    await ssh.connect(buildConnectOpts(ip));
+    await ssh.connect(buildConnectOpts(ip, creds));
     const result = await ssh.execCommand(command, { execOptions: { pty: true } });
     ssh.dispose();
     return {
@@ -64,8 +70,16 @@ export async function executeCommand(ip: string, command: string): Promise<Comma
   }
 }
 
-export async function getSSHConnection(ip: string): Promise<NodeSSH> {
+export async function getSSHConnection(ip: string, creds?: SSHCredentials): Promise<NodeSSH> {
   const ssh = new NodeSSH();
-  await ssh.connect(buildConnectOpts(ip));
+  await ssh.connect(buildConnectOpts(ip, creds));
   return ssh;
+}
+
+/**
+ * Get the sudo password for the given credentials.
+ * Returns the SSH password (used with `sudo -S`).
+ */
+export function getSudoPassword(creds?: SSHCredentials): string {
+  return creds?.password || DEFAULT_PASS;
 }

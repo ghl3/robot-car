@@ -22,10 +22,10 @@ export function useTopic(topicName: string, messageType: string, getRos: () => R
     let cancelled = false;
 
     (async () => {
-      const ROSLIB = (await import("roslib")).default;
+      const roslib = await import("roslib");
       if (cancelled) return;
 
-      const listener = new ROSLIB.Topic({
+      const listener = new roslib.Topic({
         ros: ros,
         name: topicName,
         messageType: messageType,

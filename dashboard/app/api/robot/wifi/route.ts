@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { executeCommand } from "@/lib/ssh";
+import { executeCommand, getSudoPassword } from "@/lib/ssh";
 
 interface WifiNetwork {
   ssid: string;
@@ -18,9 +18,14 @@ export async function GET(request: Request) {
       );
     }
 
+    const username = searchParams.get("username") || undefined;
+    const password = searchParams.get("password") || undefined;
+    const creds = { username, password };
+
     const result = await executeCommand(
       ip,
-      "nmcli -t -f SSID,SIGNAL,SECURITY dev wifi list --rescan yes 2>/dev/null"
+      "nmcli -t -f SSID,SIGNAL,SECURITY dev wifi list --rescan yes 2>/dev/null",
+      creds
     );
 
     const networks: WifiNetwork[] = result.stdout
@@ -47,7 +52,8 @@ export async function GET(request: Request) {
     // Get current connection
     const currentResult = await executeCommand(
       ip,
-      "nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep wlan"
+      "nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep wlan",
+      creds
     );
     const currentNetwork = currentResult.stdout.trim().split(":")[0] || null;
 
@@ -63,7 +69,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { ssid, password, ip } = body as { ssid?: string; password?: string; ip?: string };
+    const { ssid, wifiPassword, ip, username, password } = body as {
+      ssid?: string;
+      wifiPassword?: string;
+      ip?: string;
+      username?: string;
+      password?: string;
+    };
 
     if (!ip) {
       return NextResponse.json(
@@ -79,12 +91,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const creds = { username, password };
+    const sudoPass = getSudoPassword(creds);
     const escapedSsid = ssid.replace(/'/g, "'\\''");
-    const command = password
-      ? `sudo nmcli dev wifi connect '${escapedSsid}' password '${password.replace(/'/g, "'\\''")}'`
-      : `sudo nmcli dev wifi connect '${escapedSsid}'`;
+    const baseCmd = wifiPassword
+      ? `nmcli dev wifi connect '${escapedSsid}' password '${wifiPassword.replace(/'/g, "'\\''")}'`
+      : `nmcli dev wifi connect '${escapedSsid}'`;
+    const command = `echo '${sudoPass.replace(/'/g, "'\\''")}' | sudo -S ${baseCmd}`;
 
-    const result = await executeCommand(ip, command);
+    const result = await executeCommand(ip, command, creds);
 
     if (result.exitCode !== 0) {
       return NextResponse.json(

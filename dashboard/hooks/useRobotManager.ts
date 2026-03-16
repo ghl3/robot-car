@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 
 interface SystemInfo {
-  cpuTemp: number | null;
+  temps: Record<string, number>;
   memoryUsage: { totalMB: number; usedMB: number; percent: number } | null;
   diskUsage: { size: string; used: string; available: string; percent: string } | null;
   uptime: string;
@@ -30,13 +30,19 @@ interface StartupLog {
   isError?: boolean;
 }
 
+interface Credentials {
+  username: string;
+  password: string;
+}
+
 interface UseRobotManagerOptions {
   onServicesStarted?: (ip: string) => void;
   onServicesStopped?: () => void;
   robotIp: string;
+  credentials: Credentials;
 }
 
-export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp }: UseRobotManagerOptions) {
+export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp, credentials }: UseRobotManagerOptions) {
   const [servicesRunning, setServicesRunning] = useState(false);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState<LoadingState>(null);
@@ -46,10 +52,32 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
   const [startupLogs, setStartupLogs] = useState<StartupLog[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ipRef = useRef(robotIp);
+  const credsRef = useRef(credentials);
 
   useEffect(() => {
     ipRef.current = robotIp;
   }, [robotIp]);
+
+  useEffect(() => {
+    credsRef.current = credentials;
+  }, [credentials]);
+
+  /** Build query params with credentials for GET requests */
+  const credParams = useCallback((ip: string) => {
+    const params = new URLSearchParams({ ip });
+    if (credsRef.current.username) params.set("username", credsRef.current.username);
+    if (credsRef.current.password) params.set("password", credsRef.current.password);
+    return params.toString();
+  }, []);
+
+  /** Build body with credentials for POST requests */
+  const credBody = useCallback((data: Record<string, unknown>) => {
+    return {
+      ...data,
+      username: credsRef.current.username,
+      password: credsRef.current.password,
+    };
+  }, []);
 
   const clearPolling = useCallback(() => {
     if (pollRef.current) {
@@ -60,12 +88,11 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
 
   const fetchStatus = useCallback(async (ip: string) => {
     try {
-      const params = ip ? `?ip=${encodeURIComponent(ip)}` : "";
-      const res = await fetch(`/api/robot/status${params}`);
+      const res = await fetch(`/api/robot/status?${credParams(ip)}`);
       const data = await res.json();
       if (data.success) {
         setSystemInfo({
-          cpuTemp: data.cpuTemp,
+          temps: (data.temps as Record<string, number>) || {},
           memoryUsage: data.memoryUsage,
           diskUsage: data.diskUsage,
           uptime: data.uptime,
@@ -84,7 +111,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
       setSystemInfo(null);
       return null;
     }
-  }, []);
+  }, [credParams]);
 
   const startPolling = useCallback(
     (ip: string) => {
@@ -124,7 +151,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
         const res = await fetch("/api/robot/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ip }),
+          body: JSON.stringify(credBody({ ip })),
         });
 
         // Check if it's an SSE stream or a regular JSON response (e.g. 400 error)
@@ -189,7 +216,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
         setLoading(null);
       }
     },
-    [onServicesStarted, startPolling, appendLog]
+    [onServicesStarted, startPolling, appendLog, credBody]
   );
 
   const stopServices = useCallback(
@@ -201,7 +228,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
         const res = await fetch("/api/robot/disconnect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ip }),
+          body: JSON.stringify(credBody({ ip })),
         });
         const data: ApiResponse = await res.json();
         if (data.success) {
@@ -219,7 +246,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
         setLoading(null);
       }
     },
-    [onServicesStopped, stopPolling]
+    [onServicesStopped, stopPolling, credBody]
   );
 
   const shutdown = useCallback(async (action: string, ip: string): Promise<ApiResponse> => {
@@ -229,7 +256,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
       const res = await fetch("/api/robot/shutdown", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ip }),
+        body: JSON.stringify(credBody({ action, ip })),
       });
       const data: ApiResponse = await res.json();
       if (!data.success) setError(data.message ?? "Unknown error");
@@ -241,12 +268,11 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
     } finally {
       setLoading(null);
     }
-  }, []);
+  }, [credBody]);
 
   const getWifiNetworks = useCallback(async (ip: string): Promise<ApiResponse> => {
     try {
-      const params = ip ? `?ip=${encodeURIComponent(ip)}` : "";
-      const res = await fetch(`/api/robot/wifi${params}`);
+      const res = await fetch(`/api/robot/wifi?${credParams(ip)}`);
       const data = await res.json();
       if (data.success) {
         setWifiNetworks(data.networks || []);
@@ -256,20 +282,20 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp 
     } catch (err) {
       return { success: false, message: (err as Error).message };
     }
-  }, []);
+  }, [credParams]);
 
-  const connectWifi = useCallback(async (ssid: string, password: string, ip: string): Promise<ApiResponse> => {
+  const connectWifi = useCallback(async (ssid: string, wifiPassword: string, ip: string): Promise<ApiResponse> => {
     try {
       const res = await fetch("/api/robot/wifi", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ssid, password, ip }),
+        body: JSON.stringify(credBody({ ssid, wifiPassword, ip })),
       });
       return await res.json() as ApiResponse;
     } catch (err) {
       return { success: false, message: (err as Error).message };
     }
-  }, []);
+  }, [credBody]);
 
   return {
     servicesRunning,

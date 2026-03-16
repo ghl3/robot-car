@@ -21,10 +21,10 @@ export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed
   const publishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendCommand = useCallback(
-    (linearX: number, angularZ: number) => {
+    (linearX: number, steeringAngle: number) => {
       publish("/cmd_vel", "geometry_msgs/Twist", {
         linear: { x: linearX, y: 0, z: 0 },
-        angular: { x: 0, y: 0, z: angularZ },
+        angular: { x: 0, y: 0, z: steeringAngle },
       });
     },
     [publish]
@@ -33,35 +33,35 @@ export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed
   const computeAndSend = useCallback(() => {
     const keys = activeKeys.current;
     let linearX = 0;
-    let angularZ = 0;
+    let sa = 0;
 
     if (keys.has("forward")) linearX = speed;
     else if (keys.has("backward")) linearX = -speed;
 
     if (keys.has("left")) {
-      angularZ = turnRate;
+      sa = turnRate;
       if (linearX === 0) linearX = turnSpeed;
     } else if (keys.has("right")) {
-      angularZ = -turnRate;
+      sa = -turnRate;
       if (linearX === 0) linearX = turnSpeed;
     }
 
     const now = Date.now();
     if (now - lastPublish.current >= 100) {
       lastPublish.current = now;
-      sendCommand(linearX, angularZ);
+      sendCommand(linearX, sa);
     } else if (!publishTimer.current) {
       publishTimer.current = setTimeout(() => {
         publishTimer.current = null;
         lastPublish.current = Date.now();
         // Recompute from current active keys
         const k = activeKeys.current;
-        let lx = 0, az = 0;
+        let lx = 0, sa = 0;
         if (k.has("forward")) lx = speed;
         else if (k.has("backward")) lx = -speed;
-        if (k.has("left")) { az = turnRate; if (lx === 0) lx = turnSpeed; }
-        else if (k.has("right")) { az = -turnRate; if (lx === 0) lx = turnSpeed; }
-        sendCommand(lx, az);
+        if (k.has("left")) { sa = turnRate; if (lx === 0) lx = turnSpeed; }
+        else if (k.has("right")) { sa = -turnRate; if (lx === 0) lx = turnSpeed; }
+        sendCommand(lx, sa);
       }, 100 - (now - lastPublish.current));
     }
   }, [speed, turnRate, turnSpeed, sendCommand]);

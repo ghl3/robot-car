@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface CameraFeedProps {
   robotIp: string | null;
@@ -9,6 +9,11 @@ interface CameraFeedProps {
 
 export default function CameraFeed({ robotIp, connected }: CameraFeedProps) {
   const [error, setError] = useState(false);
+
+  // Reset error when connection state changes
+  useEffect(() => {
+    if (connected) setError(false);
+  }, [connected]);
 
   if (!connected) {
     return (

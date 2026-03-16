@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { executeCommand } from "@/lib/ssh";
+import { executeCommand, getSudoPassword } from "@/lib/ssh";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { action, ip } = body as { action?: string; ip?: string };
+    const { action, ip, username, password } = body as { action?: string; ip?: string; username?: string; password?: string };
 
     if (!ip) {
       return NextResponse.json(
@@ -20,11 +20,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const command = action === "shutdown" ? "sudo shutdown now" : "sudo reboot";
+    const creds = { username, password };
+    const sudoPass = getSudoPassword(creds);
+    const baseCmd = action === "shutdown" ? "shutdown now" : "reboot";
+    const command = `echo '${sudoPass.replace(/'/g, "'\\''")}' | sudo -S ${baseCmd}`;
 
     // Connection drop is expected during shutdown/reboot
     try {
-      await executeCommand(ip, command);
+      await executeCommand(ip, command, creds);
     } catch {
       // Expected
     }

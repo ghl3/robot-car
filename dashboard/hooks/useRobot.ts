@@ -9,13 +9,13 @@ export type RosStatus = "disconnected" | "connecting" | "connected" | "reconnect
 export type PublishFn = (topicName: string, messageType: string, data: Record<string, unknown>) => void;
 
 let rosInstance: Ros | null = null;
-let ROSLIB: typeof import("roslib").default | null = null;
+let roslibModule: typeof import("roslib") | null = null;
 
 async function getRoslib() {
-  if (!ROSLIB) {
-    ROSLIB = (await import("roslib")).default;
+  if (!roslibModule) {
+    roslibModule = await import("roslib");
   }
-  return ROSLIB;
+  return roslibModule;
 }
 
 export function useRobot() {
@@ -48,6 +48,7 @@ export function useRobot() {
     (targetIp: string) => {
       clearReconnect();
       const delay = Math.min(reconnectDelay.current, 30000);
+      console.log(`[useRobot] scheduling reconnect in ${delay}ms`);
       setStatus("reconnecting");
       reconnectTimer.current = setTimeout(async () => {
         reconnectDelay.current = Math.min(delay * 1.5, 30000);
@@ -56,26 +57,32 @@ export function useRobot() {
           if (rosInstance) {
             try { rosInstance.close(); } catch {}
           }
-          const ros = new roslib.Ros({ url: `ws://${targetIp}:9090` });
+          const wsUrl = `ws://${targetIp}:9090`;
+          console.log(`[useRobot] reconnecting to ${wsUrl}`);
+          const ros = new roslib.Ros({ url: wsUrl });
 
           ros.on("connection", () => {
+            console.log(`[useRobot] reconnected to ${wsUrl}`);
             rosInstance = ros;
             reconnectDelay.current = 3000;
             setStatus("connected");
           });
 
-          ros.on("error", () => {
+          ros.on("error", (err: unknown) => {
+            console.error("[useRobot] reconnect WebSocket error:", err);
             if (!intentionalDisconnect.current) {
               scheduleReconnect(targetIp);
             }
           });
 
           ros.on("close", () => {
+            console.warn("[useRobot] reconnect WebSocket closed");
             if (!intentionalDisconnect.current) {
               scheduleReconnect(targetIp);
             }
           });
-        } catch {
+        } catch (err) {
+          console.error("[useRobot] reconnect failed:", err);
           if (!intentionalDisconnect.current) {
             scheduleReconnect(targetIp);
           }
@@ -92,33 +99,41 @@ export function useRobot() {
       setStatus("connecting");
       setIpState(targetIp);
 
+      const wsUrl = `ws://${targetIp}:9090`;
+      console.log(`[useRobot] connect() called — opening ${wsUrl}`);
+
       try {
         const roslib = await getRoslib();
+        console.log("[useRobot] roslib loaded, Ros:", typeof roslib.Ros);
         if (rosInstance) {
           try { rosInstance.close(); } catch {}
         }
 
-        const ros = new roslib.Ros({ url: `ws://${targetIp}:9090` });
+        const ros = new roslib.Ros({ url: wsUrl });
 
         ros.on("connection", () => {
+          console.log(`[useRobot] WebSocket connected to ${wsUrl}`);
           rosInstance = ros;
           reconnectDelay.current = 3000;
           setStoredIp(targetIp);
           setStatus("connected");
         });
 
-        ros.on("error", () => {
+        ros.on("error", (err: unknown) => {
+          console.error("[useRobot] WebSocket error:", err);
           if (!intentionalDisconnect.current && statusRef.current !== "disconnected") {
             scheduleReconnect(targetIp);
           }
         });
 
         ros.on("close", () => {
+          console.warn("[useRobot] WebSocket closed");
           if (!intentionalDisconnect.current && statusRef.current !== "disconnected") {
             scheduleReconnect(targetIp);
           }
         });
-      } catch {
+      } catch (err) {
+        console.error("[useRobot] connect() failed:", err);
         setStatus("disconnected");
       }
     },
@@ -143,7 +158,7 @@ export function useRobot() {
       name: topicName,
       messageType: messageType,
     });
-    topic.publish(new roslib.Message(data));
+    topic.publish(data);
   }, []);
 
   return { status, ip, connect, disconnect, publish, getRos: (): Ros | null => rosInstance };

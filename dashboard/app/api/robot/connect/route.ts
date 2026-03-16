@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
-import { getSSHConnection, executeCommand } from "@/lib/ssh";
+import { getSSHConnection, executeCommand, getSudoPassword } from "@/lib/ssh";
+import type { SSHCredentials } from "@/lib/ssh";
 
 // The startup script runs on the Jetson. Written to /tmp/ and executed via nohup.
 // The heredoc delimiter is single-quoted ('SCRIPT_EOF') so $ is not expanded by the remote shell.
 // In JS template literals, $ without { is literal, so $VAR passes through as-is.
+// Fine-tune steering center after servo horn reinstall. Find the right value with:
+//   rosrun dynamic_reconfigure dynparam set /jetracer servo_bias <value>
+// then update this constant to persist it across restarts.
+const SERVO_BIAS = 250;
+
+const REQUIRED_PKGS = [
+  "ros-melodic-rosbridge-suite",
+  "ros-melodic-web-video-server",
+];
+
 const START_SCRIPT = [
   "#!/bin/bash",
-  "",
-  "# Auto-install missing ROS packages",
-  "if ! dpkg -l | grep -q ros-melodic-rosbridge-suite; then",
-  "    sudo apt-get update",
-  "    sudo apt-get install -y ros-melodic-rosbridge-suite",
-  "fi",
-  "if ! dpkg -l | grep -q ros-melodic-web-video-server; then",
-  "    sudo apt-get update",
-  "    sudo apt-get install -y ros-melodic-web-video-server",
-  "fi",
   "",
   "source /opt/ros/melodic/setup.bash",
   "source ~/catkin_ws/devel/setup.bash",
@@ -26,6 +27,12 @@ const START_SCRIPT = [
   "",
   "roslaunch jetracer jetracer.launch &",
   "JETRACER_PID=$!",
+  "sleep 3",
+  "",
+  `# Set servo bias to correct steering center (0 = no correction)`,
+  `if [ ${SERVO_BIAS} -ne 0 ]; then`,
+  `    rosrun dynamic_reconfigure dynparam set /jetracer servo_bias ${SERVO_BIAS}`,
+  `fi`,
   "",
   "roslaunch jetracer csi_camera.launch &",
   "CAMERA_PID=$!",
@@ -68,9 +75,19 @@ function sseEvent(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
 }
 
+/** Run a command with sudo -S, piping the password via stdin */
+function sudoCmd(command: string, sudoPass: string): string {
+  const escaped = sudoPass.replace(/'/g, "'\\''");
+  return `echo '${escaped}' | sudo -S ${command}`;
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const ip = body.ip as string | undefined;
+  const creds: SSHCredentials = {
+    username: body.username || undefined,
+    password: body.password || undefined,
+  };
 
   if (!ip) {
     return NextResponse.json(
@@ -78,6 +95,8 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
+
+  const sudoPass = getSudoPassword(creds);
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -91,13 +110,12 @@ export async function POST(request: Request) {
       try {
         // Check if services are already running (also verifies SSH connectivity)
         log("Connecting to robot via SSH...");
-        let sshReachable = false;
         try {
           const check = await executeCommand(
             ip,
-            "bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null"
+            "bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null",
+            creds
           );
-          sshReachable = true;
           if (check.exitCode === 0) {
             log("Services are already running!");
             send({
@@ -125,13 +143,76 @@ export async function POST(request: Request) {
             return;
           }
           // SSH connected but the port-check command itself failed — that's fine, services aren't running
-          sshReachable = true;
           log("SSH connected. Services not yet running.");
         }
 
-        // Connect via SSH (reuse connection for script upload)
-        log("Preparing startup script...");
-        ssh = await getSSHConnection(ip);
+        // Get a persistent SSH connection for setup steps
+        log("Preparing startup environment...");
+        ssh = await getSSHConnection(ip, creds);
+
+        // Ensure passwordless sudo is configured (so nohup scripts can use sudo)
+        log("Configuring sudo access...");
+        const username = creds.username || "jetson";
+        const sudoersLine = `${username} ALL=(ALL) NOPASSWD:ALL`;
+        const checkSudoers = await ssh.execCommand(
+          sudoCmd(`grep -qF '${sudoersLine}' /etc/sudoers.d/${username} 2>/dev/null && echo OK || echo MISSING`, sudoPass),
+          { execOptions: { pty: true } }
+        );
+        if (!checkSudoers.stdout.includes("OK")) {
+          log("Setting up passwordless sudo...");
+          const setupResult = await ssh.execCommand(
+            sudoCmd(`bash -c 'echo "${sudoersLine}" > /etc/sudoers.d/${username} && chmod 440 /etc/sudoers.d/${username}'`, sudoPass),
+            { execOptions: { pty: true } }
+          );
+          // Verify it worked
+          const verify = await ssh.execCommand("sudo -n true 2>&1");
+          if (verify.code !== 0) {
+            log("Warning: could not configure passwordless sudo. Package installation may fail.");
+          } else {
+            log("Passwordless sudo configured.");
+          }
+        } else {
+          log("Sudo access OK.");
+        }
+
+        // Check and install missing ROS packages
+        log("Checking required ROS packages...");
+        const depCheck = await ssh.execCommand(
+          `dpkg -s ${REQUIRED_PKGS.join(" ")} 2>&1`,
+          { execOptions: { pty: true } }
+        );
+        const depOutput = depCheck.stdout + depCheck.stderr;
+        const missingPkgs = REQUIRED_PKGS.filter(
+          (pkg) => depOutput.includes(`'${pkg}' is not installed`)
+        );
+        if (missingPkgs.length > 0) {
+          log(`Installing missing packages: ${missingPkgs.join(", ")}...`);
+          // Refresh ROS GPG key (Melodic key often expires), then install
+          log("Updating ROS repository key...");
+          await ssh.execCommand(
+            sudoCmd(`bash -c 'curl -fsSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | apt-key add -'`, sudoPass),
+            { execOptions: { pty: true } }
+          );
+          const installResult = await ssh.execCommand(
+            sudoCmd(`bash -c 'apt-get update -qq && apt-get install -y ${missingPkgs.join(" ")}'`, sudoPass),
+            { execOptions: { pty: true } }
+          );
+          if (installResult.code !== 0) {
+            const errMsg = installResult.stderr || installResult.stdout;
+            log(`Package install failed: ${errMsg.slice(0, 200)}`);
+            send({
+              type: "complete",
+              success: false,
+              message: "Failed to install required packages. Check credentials and network.",
+            });
+            ssh.dispose();
+            controller.close();
+            return;
+          }
+          log("Packages installed successfully.");
+        } else {
+          log("All required packages present.");
+        }
 
         // Upload startup script
         log("Uploading startup script...");
@@ -141,19 +222,18 @@ export async function POST(request: Request) {
         );
         await ssh.execCommand(`chmod +x ${remotePath}`);
 
-        // Launch services (script auto-installs missing packages, which can take a while)
-        log("Launching JetRacer services (installing missing packages if needed)...");
+        // Launch services (no PTY — PTY would kill the process when SSH disconnects)
+        log("Launching JetRacer services...");
         await ssh.execCommand(
-          `nohup bash ${remotePath} > /tmp/jetracer.log 2>&1 & disown`,
-          { execOptions: { pty: true } }
+          `nohup bash ${remotePath} > /tmp/jetracer.log 2>&1 &`
         );
         ssh.dispose();
         ssh = null;
 
-        // Poll for rosbridge (90s timeout — apt-get install can take a while on first run)
+        // Poll for rosbridge
         let rosbridgeUp = false;
         const startTime = Date.now();
-        const timeoutMs = 90000;
+        const timeoutMs = 60000;
         let attempt = 0;
         const maxAttempts = Math.ceil(timeoutMs / 3000);
 
@@ -164,7 +244,8 @@ export async function POST(request: Request) {
           try {
             const result = await executeCommand(
               ip,
-              "bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null"
+              "bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null",
+              creds
             );
             if (result.exitCode === 0) {
               rosbridgeUp = true;
@@ -187,7 +268,7 @@ export async function POST(request: Request) {
         } else {
           let logTail = "";
           try {
-            const logResult = await executeCommand(ip, "tail -20 /tmp/jetracer.log 2>/dev/null");
+            const logResult = await executeCommand(ip, "tail -20 /tmp/jetracer.log 2>/dev/null", creds);
             logTail = logResult.stdout;
           } catch {}
           log("Rosbridge did not come up in time.");

@@ -1,24 +1,39 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getStoredIp, setStoredIp } from "@/lib/robot-config";
+import { getStoredIp, setStoredIp, getStoredCredentials, setStoredCredentials } from "@/lib/robot-config";
 import { useRobotManager } from "@/hooks/useRobotManager";
 import type { RosStatus } from "@/hooks/useRobot";
 
 interface TempBadgeProps {
-  temp: number | null;
+  label: string;
+  temp: number;
 }
 
-function TempBadge({ temp }: TempBadgeProps) {
-  if (temp === null || temp === undefined) return null;
+function TempBadge({ label, temp }: TempBadgeProps) {
   const color =
     temp >= 80
       ? "text-accent-red"
       : temp >= 60
         ? "text-accent-amber"
         : "text-accent-green";
-  return <span className={`font-mono ${color}`}>{temp.toFixed(1)}&deg;C</span>;
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-xs text-text-dim">{label}</span>
+      <span className={`font-mono ${color}`}>{temp.toFixed(1)}&deg;C</span>
+    </div>
+  );
 }
+
+// Friendly names for thermal zones
+const ZONE_LABELS: Record<string, string> = {
+  "CPU-therm": "CPU",
+  "GPU-therm": "GPU",
+  "AO-therm": "AO",
+  "PLL-therm": "PLL",
+  "thermal-fan-est": "Fan Est",
+  "iwlwifi": "WiFi",
+};
 
 interface UsageBarProps {
   label: string;
@@ -88,6 +103,9 @@ interface RobotManagerProps {
 
 export default function RobotManager({ rosStatus, onConnect, onDisconnect }: RobotManagerProps) {
   const [ip, setIp] = useState("");
+  const [username, setUsername] = useState("jetson");
+  const [password, setPassword] = useState("jetson");
+  const [showCredentials, setShowCredentials] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [wifiPassword, setWifiPassword] = useState("");
   const [selectedSsid, setSelectedSsid] = useState("");
@@ -112,6 +130,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
     clearStartupLogs,
   } = useRobotManager({
     onServicesStarted: (connectedIp: string) => {
+      console.log(`[RobotManager] onServicesStarted — calling onConnect(${connectedIp})`);
       setStoredIp(connectedIp);
       onConnect(connectedIp);
     },
@@ -120,10 +139,14 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
       stopPolling();
     },
     robotIp: ip,
+    credentials: { username, password },
   });
 
   useEffect(() => {
-    setIp(getStoredIp());
+    const creds = getStoredCredentials();
+    setIp(creds.ip);
+    setUsername(creds.username);
+    setPassword(creds.password);
   }, []);
 
   // Auto-scroll log panel (scroll container only, not the page)
@@ -138,7 +161,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
   const handlePowerOn = async () => {
     const trimmedIp = ip.trim();
     if (!trimmedIp) return;
-    setStoredIp(trimmedIp);
+    setStoredCredentials({ ip: trimmedIp, username, password });
     const result = await startServices(trimmedIp);
     if (result?.success) {
       startPolling(trimmedIp);
@@ -212,14 +235,14 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                 disabled={isBusy || !ip.trim()}
                 className="rounded px-4 py-1.5 text-sm font-medium bg-accent-red hover:bg-accent-red-bright text-white disabled:opacity-50 transition-colors shadow-sm"
               >
-                {loading === "starting" ? "Starting..." : "Power On"}
+                {loading === "starting" ? "Connecting..." : "Connect"}
               </button>
               <button
                 onClick={handlePowerOff}
                 disabled={isBusy || (!servicesRunning && !isConnected)}
                 className="rounded px-4 py-1.5 text-sm font-medium bg-input-bg border border-panel-border hover:bg-panel-border text-text-label disabled:opacity-50 transition-colors"
               >
-                {loading === "stopping" ? "Stopping..." : "Power Off"}
+                {loading === "stopping" ? "Disconnecting..." : "Disconnect"}
               </button>
               <button
                 onClick={handleCheckStatus}
@@ -231,8 +254,47 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               </button>
+              <button
+                onClick={() => setShowCredentials(!showCredentials)}
+                className="rounded px-2 py-1.5 text-sm text-text-dim hover:text-foreground hover:bg-input-bg transition-colors ml-auto"
+                title="SSH credentials"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
             </div>
 
+            {/* SSH Credentials */}
+            {showCredentials && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-text-dim">SSH:</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    setStoredCredentials({ username: e.target.value });
+                  }}
+                  placeholder="Username"
+                  disabled={isBusy}
+                  className="rounded bg-input-bg border border-input-border px-2 py-1 text-xs text-foreground placeholder-text-dim w-24 disabled:opacity-50"
+                />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setStoredCredentials({ password: e.target.value });
+                  }}
+                  placeholder="Password"
+                  disabled={isBusy}
+                  className="rounded bg-input-bg border border-input-border px-2 py-1 text-xs text-foreground placeholder-text-dim w-28 disabled:opacity-50"
+                />
+                <span className="text-xs text-text-dim">Saved to browser</span>
+              </div>
+            )}
           </div>
 
           {/* Startup Log Panel */}
@@ -280,10 +342,14 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
           {/* System Info */}
           {systemInfo && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="bg-input-bg border border-panel-border rounded p-3">
-                <div className="text-xs text-text-dim mb-1">CPU Temp</div>
-                <TempBadge temp={systemInfo.cpuTemp} />
-              </div>
+              {Object.keys(systemInfo.temps).length > 0 && (
+                <div className="bg-input-bg border border-panel-border rounded p-3 space-y-1">
+                  <div className="text-xs text-text-dim mb-1">Temperatures</div>
+                  {Object.entries(systemInfo.temps).map(([zone, temp]) => (
+                    <TempBadge key={zone} label={ZONE_LABELS[zone] || zone} temp={temp} />
+                  ))}
+                </div>
+              )}
               {systemInfo.memoryUsage && (
                 <div className="bg-input-bg border border-panel-border rounded p-3">
                   <div className="text-xs text-text-dim mb-1">Memory</div>

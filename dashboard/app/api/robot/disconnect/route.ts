@@ -4,7 +4,7 @@ import { executeCommand } from "@/lib/ssh";
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const ip = body.ip as string | undefined;
+    const { ip, username, password } = body as { ip?: string; username?: string; password?: string };
     if (!ip) {
       return NextResponse.json(
         { success: false, message: "IP address is required" },
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       "pkill -f start_jetracer 2>/dev/null",
     ];
 
-    await executeCommand(ip, stopCommands.join("; "));
+    await executeCommand(ip, stopCommands.join("; "), { username, password });
 
     return NextResponse.json({
       success: true,

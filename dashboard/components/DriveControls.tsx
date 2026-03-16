@@ -41,11 +41,11 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
   useKeyboardControls(publish, status, speed, turnRate, turnSpeed);
 
   const sendCmd = useCallback(
-    (linearX: number, angularZ: number) => {
+    (linearX: number, steeringAngle: number) => {
       if (!connected) return;
       publish("/cmd_vel", "geometry_msgs/Twist", {
         linear: { x: linearX, y: 0, z: 0 },
-        angular: { x: 0, y: 0, z: angularZ },
+        angular: { x: 0, y: 0, z: steeringAngle },
       });
     },
     [publish, connected]
@@ -57,12 +57,12 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
     (dir: string) => {
       pressedRef.current.add(dir);
       const p = pressedRef.current;
-      let lx = 0, az = 0;
+      let lx = 0, sa = 0;
       if (p.has("forward")) lx = speed;
       else if (p.has("backward")) lx = -speed;
-      if (p.has("left")) { az = turnRate; if (lx === 0) lx = turnSpeed; }
-      else if (p.has("right")) { az = -turnRate; if (lx === 0) lx = turnSpeed; }
-      sendCmd(lx, az);
+      if (p.has("left")) { sa = turnRate; if (lx === 0) lx = turnSpeed; }
+      else if (p.has("right")) { sa = -turnRate; if (lx === 0) lx = turnSpeed; }
+      sendCmd(lx, sa);
     },
     [speed, turnRate, turnSpeed, sendCmd]
   );
@@ -76,12 +76,12 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
         startDirection(dir);
         pressedRef.current.delete(dir);
         const p = pressedRef.current;
-        let lx = 0, az = 0;
+        let lx = 0, sa = 0;
         if (p.has("forward")) lx = speed;
         else if (p.has("backward")) lx = -speed;
-        if (p.has("left")) { az = turnRate; if (lx === 0) lx = turnSpeed; }
-        else if (p.has("right")) { az = -turnRate; if (lx === 0) lx = turnSpeed; }
-        sendCmd(lx, az);
+        if (p.has("left")) { sa = turnRate; if (lx === 0) lx = turnSpeed; }
+        else if (p.has("right")) { sa = -turnRate; if (lx === 0) lx = turnSpeed; }
+        sendCmd(lx, sa);
       }
     },
     [speed, turnRate, turnSpeed, sendCmd, stop]
@@ -151,12 +151,12 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
             </div>
           </label>
           <label className="flex items-center justify-between gap-3 text-text-label">
-            <span>Turn rate</span>
+            <span>Steering</span>
             <div className="flex items-center gap-2 flex-1">
               <input
                 type="range"
                 min="0.1"
-                max="1.5"
+                max="0.6"
                 step="0.05"
                 value={turnRate}
                 onChange={(e) => setTurnRate(parseFloat(e.target.value))}
@@ -166,7 +166,7 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
             </div>
           </label>
           <label className="flex items-center justify-between gap-3 text-text-label">
-            <span>Turn speed</span>
+            <span>Turn drive</span>
             <div className="flex items-center gap-2 flex-1">
               <input
                 type="range"

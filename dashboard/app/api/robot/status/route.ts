@@ -14,14 +14,17 @@ export async function GET(request: Request) {
       );
     }
 
-    ssh = await getSSHConnection(ip);
+    const username = searchParams.get("username") || undefined;
+    const password = searchParams.get("password") || undefined;
+
+    ssh = await getSSHConnection(ip, { username, password });
 
     // Run all health checks in parallel
     const [rosCheck, bridgeCheck, tempResult, memResult, diskResult, uptimeResult, ipResult] =
       await Promise.all([
         ssh.execCommand("pgrep -f roscore"),
         ssh.execCommand("bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null"),
-        ssh.execCommand("cat /sys/devices/virtual/thermal/thermal_zone*/temp 2>/dev/null"),
+        ssh.execCommand("for z in /sys/devices/virtual/thermal/thermal_zone*; do echo \"$(cat $z/type):$(cat $z/temp)\"; done 2>/dev/null"),
         ssh.execCommand("free -m"),
         ssh.execCommand("df -h /"),
         ssh.execCommand("uptime -p 2>/dev/null || uptime"),
@@ -30,13 +33,14 @@ export async function GET(request: Request) {
 
     ssh.dispose();
 
-    // Parse CPU temperature (millidegrees to degrees)
-    const temps = tempResult.stdout
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .map((t) => parseInt(t, 10) / 1000);
-    const cpuTemp = temps.length > 0 ? Math.max(...temps) : null;
+    // Parse temperatures by zone name (millidegrees to degrees), skip PMIC-Die (always reads 100°C)
+    const temps: Record<string, number> = {};
+    for (const line of tempResult.stdout.trim().split("\n").filter(Boolean)) {
+      const [name, val] = line.split(":");
+      if (name && val && name !== "PMIC-Die") {
+        temps[name] = parseInt(val, 10) / 1000;
+      }
+    }
 
     // Parse memory
     let memoryUsage: { totalMB: number; usedMB: number; percent: number } | null = null;
@@ -60,7 +64,7 @@ export async function GET(request: Request) {
       success: true,
       rosRunning: rosCheck.code === 0,
       rosbridgeUp: bridgeCheck.code === 0,
-      cpuTemp,
+      temps,
       memoryUsage,
       diskUsage,
       uptime: uptimeResult.stdout.trim(),
