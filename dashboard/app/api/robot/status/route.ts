@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     ssh = await getSSHConnection(ip, { username, password });
 
     // Run all health checks in parallel
-    const [rosCheck, bridgeCheck, tempResult, memResult, diskResult, uptimeResult, ipResult] =
+    const [rosCheck, bridgeCheck, tempResult, memResult, diskResult, uptimeResult, ipResult, lidarDeviceResult, lidarTopicResult, slamResult] =
       await Promise.all([
         ssh.execCommand("pgrep -f roscore"),
         ssh.execCommand("bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null"),
@@ -29,6 +29,9 @@ export async function GET(request: Request) {
         ssh.execCommand("df -h /"),
         ssh.execCommand("uptime -p 2>/dev/null || uptime"),
         ssh.execCommand("hostname -I"),
+        ssh.execCommand("test -e /dev/ttyACM1 && echo yes || echo"),
+        ssh.execCommand("pgrep -f rplidarNode"),
+        ssh.execCommand("pgrep -f slam_gmapping"),
       ]);
 
     ssh.dispose();
@@ -69,6 +72,9 @@ export async function GET(request: Request) {
       diskUsage,
       uptime: uptimeResult.stdout.trim(),
       ip: ipResult.stdout.trim().split(" ")[0],
+      lidarDetected: lidarDeviceResult.stdout.trim() !== "",
+      lidarActive: lidarTopicResult.code === 0,
+      slamActive: slamResult.code === 0,
     });
   } catch (error) {
     if (ssh) ssh.dispose();

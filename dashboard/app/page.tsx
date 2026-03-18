@@ -1,15 +1,20 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import { useRobot } from "@/hooks/useRobot";
 import ConnectionBar from "@/components/ConnectionBar";
 import RobotManager from "@/components/RobotManager";
 import CameraFeed from "@/components/CameraFeed";
-import LidarViewer from "@/components/LidarViewer";
+import MapViewer from "@/components/MapViewer";
 import DriveControls from "@/components/DriveControls";
 
 export default function Home() {
   const { status, ip, connect, disconnect, publish, getRos } = useRobot();
   const connected = status === "connected";
+  const [lidarInfo, setLidarInfo] = useState<{ lidarDetected: boolean; lidarActive: boolean; slamActive: boolean } | null>(null);
+  const handleSystemInfo = useCallback((info: { lidarDetected: boolean; lidarActive: boolean; slamActive: boolean } | null) => {
+    setLidarInfo(info);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6">
@@ -27,25 +32,23 @@ export default function Home() {
           rosStatus={status}
           onConnect={connect}
           onDisconnect={disconnect}
+          onSystemInfo={handleSystemInfo}
         />
 
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Camera - spans 2 columns on large screens */}
-          <div className="lg:col-span-2">
-            <CameraFeed robotIp={ip} connected={connected} />
-          </div>
-
-          {/* Controls */}
-          <div className="flex flex-col gap-4">
-            <DriveControls publish={publish} status={status} />
-          </div>
-
-          {/* LIDAR */}
-          <div className="lg:col-span-2">
-            <LidarViewer status={status} getRos={getRos} />
-          </div>
+        {/* Camera + Map side-by-side */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <CameraFeed robotIp={ip} connected={connected} />
+          <MapViewer
+            status={status}
+            getRos={getRos}
+            lidarDetected={lidarInfo?.lidarDetected}
+            lidarActive={lidarInfo?.lidarActive}
+            slamActive={lidarInfo?.slamActive}
+          />
         </div>
+
+        {/* Drive Controls — full-width horizontal bar */}
+        <DriveControls publish={publish} status={status} />
       </div>
     </div>
   );

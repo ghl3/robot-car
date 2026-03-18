@@ -99,9 +99,10 @@ interface RobotManagerProps {
   rosStatus: RosStatus;
   onConnect: (ip: string) => void;
   onDisconnect: () => void;
+  onSystemInfo?: (info: { lidarDetected: boolean; lidarActive: boolean; slamActive: boolean } | null) => void;
 }
 
-export default function RobotManager({ rosStatus, onConnect, onDisconnect }: RobotManagerProps) {
+export default function RobotManager({ rosStatus, onConnect, onDisconnect, onSystemInfo }: RobotManagerProps) {
   const [ip, setIp] = useState("");
   const [username, setUsername] = useState("jetson");
   const [password, setPassword] = useState("jetson");
@@ -149,6 +150,11 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
     setPassword(creds.password);
   }, []);
 
+  // Propagate lidar status to parent
+  useEffect(() => {
+    onSystemInfo?.(systemInfo ? { lidarDetected: systemInfo.lidarDetected, lidarActive: systemInfo.lidarActive, slamActive: systemInfo.slamActive } : null);
+  }, [systemInfo, onSystemInfo]);
+
   // Auto-scroll log panel (scroll container only, not the page)
   useEffect(() => {
     const el = logContainerRef.current;
@@ -173,6 +179,17 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
     await stopServices(trimmedIp);
   };
 
+  const handleRestart = async () => {
+    const trimmedIp = ip.trim();
+    if (!trimmedIp) return;
+    await stopServices(trimmedIp);
+    setStoredCredentials({ ip: trimmedIp, username, password });
+    const result = await startServices(trimmedIp, { force: true });
+    if (result?.success) {
+      startPolling(trimmedIp);
+    }
+  };
+
   const handleCheckStatus = () => {
     const trimmedIp = ip.trim();
     if (!trimmedIp) return;
@@ -192,6 +209,25 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
     </div>
   );
 
+  const lidarDot = () => {
+    const detected = systemInfo?.lidarDetected ?? false;
+    const active = systemInfo?.lidarActive ?? false;
+    let dotClass: string;
+    if (active) {
+      dotClass = "bg-accent-green shadow-[0_0_6px_theme(--color-accent-green)]";
+    } else if (detected) {
+      dotClass = "bg-accent-amber shadow-[0_0_6px_theme(--color-accent-amber)]";
+    } else {
+      dotClass = "bg-input-bg border border-panel-border";
+    }
+    return (
+      <div className="flex items-center gap-2">
+        <div className={`h-3 w-3 rounded-full ${dotClass}`} />
+        <span className="text-xs text-text-dim">LIDAR</span>
+      </div>
+    );
+  };
+
   return (
     <div className="bg-panel border border-panel-border rounded overflow-hidden shadow-sm">
       {/* Header */}
@@ -205,6 +241,8 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
             {statusDot(systemInfo !== null, "SSH")}
             {statusDot(servicesRunning, "ROS")}
             {statusDot(isConnected, "Bridge")}
+            {lidarDot()}
+            {statusDot(systemInfo?.slamActive ?? false, "SLAM")}
           </div>
         </div>
         <svg
@@ -243,6 +281,14 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect }: Rob
                 className="rounded px-4 py-1.5 text-sm font-medium bg-input-bg border border-panel-border hover:bg-panel-border text-text-label disabled:opacity-50 transition-colors"
               >
                 {loading === "stopping" ? "Disconnecting..." : "Disconnect"}
+              </button>
+              <button
+                onClick={handleRestart}
+                disabled={isBusy || (!servicesRunning && !isConnected)}
+                className="rounded px-4 py-1.5 text-sm font-medium bg-accent-amber/20 text-accent-amber hover:bg-accent-amber/30 disabled:opacity-50 transition-colors"
+                title="Stop and restart all services"
+              >
+                {loading === "starting" && servicesRunning ? "Restarting..." : "Restart"}
               </button>
               <button
                 onClick={handleCheckStatus}

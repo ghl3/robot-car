@@ -19,7 +19,7 @@ function DPadButton({ label, onStart, onStop, className = "" }: DPadButtonProps)
       onMouseLeave={onStop}
       onTouchStart={(e) => { e.preventDefault(); onStart(); }}
       onTouchEnd={(e) => { e.preventDefault(); onStop(); }}
-      className={`flex items-center justify-center w-16 h-16 rounded bg-panel border-2 border-panel-border text-text-label font-mono text-sm font-bold select-none hover:bg-input-bg hover:border-accent-gold active:bg-input-bg active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] transition-colors ${className}`}
+      className={`flex items-center justify-center w-12 h-12 rounded bg-panel border-2 border-panel-border text-text-label font-mono text-xs font-bold select-none hover:bg-input-bg hover:border-accent-gold active:bg-input-bg active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] transition-colors ${className}`}
     >
       {label}
     </button>
@@ -89,101 +89,90 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
 
   return (
     <div className="bg-panel border border-panel-border rounded overflow-hidden shadow-sm">
-      <div className="bg-panel-header border-b border-panel-border uppercase tracking-widest text-xs text-panel-header-text px-4 py-2 flex items-center justify-between">
-        <span>DRIVE CONTROLS</span>
-        {connected && (
-          <span className="text-panel-header-text/70 normal-case tracking-normal">WASD / Arrow keys</span>
-        )}
-      </div>
-
-      <div className="p-4 flex flex-col gap-4">
+      <div className="px-4 py-2 flex items-center gap-6">
         {/* D-Pad */}
-        <div className="flex justify-center">
-          <div className="grid grid-cols-3 gap-1 w-fit">
-            <div />
-            <DPadButton
-              label="FWD"
-              onStart={() => startDirection("forward")}
-              onStop={() => stopDirection("forward")}
-            />
-            <div />
-            <DPadButton
-              label="LEFT"
-              onStart={() => startDirection("left")}
-              onStop={() => stopDirection("left")}
-            />
-            <DPadButton
-              label="REV"
-              onStart={() => startDirection("backward")}
-              onStop={() => stopDirection("backward")}
-            />
-            <DPadButton
-              label="RIGHT"
-              onStart={() => startDirection("right")}
-              onStop={() => stopDirection("right")}
-            />
-          </div>
+        <div className="grid grid-cols-3 gap-0.5 shrink-0">
+          <div />
+          <DPadButton
+            label="FWD"
+            onStart={() => startDirection("forward")}
+            onStop={() => stopDirection("forward")}
+          />
+          <div />
+          <DPadButton
+            label="LEFT"
+            onStart={() => startDirection("left")}
+            onStop={() => stopDirection("left")}
+          />
+          <DPadButton
+            label="REV"
+            onStart={() => startDirection("backward")}
+            onStop={() => stopDirection("backward")}
+          />
+          <DPadButton
+            label="RIGHT"
+            onStart={() => startDirection("right")}
+            onStop={() => stopDirection("right")}
+          />
         </div>
 
         {/* Emergency Stop */}
         <button
           onClick={stop}
-          className="w-full py-3 rounded bg-accent-red hover:bg-accent-red-bright text-white font-bold text-sm transition-colors shadow-md active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]"
+          className="shrink-0 px-6 py-5 rounded bg-accent-red hover:bg-accent-red-bright text-white font-bold text-sm transition-colors shadow-md active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]"
         >
-          EMERGENCY STOP
+          E-STOP
         </button>
 
-        {/* Speed Sliders */}
-        <div className="flex flex-col gap-3 text-sm">
-          <label className="flex items-center justify-between gap-3 text-text-label">
-            <span>Speed</span>
-            <div className="flex items-center gap-2 flex-1">
-              <input
-                type="range"
-                min="0.1"
-                max="1.0"
-                step="0.05"
-                value={speed}
-                onChange={(e) => setSpeed(parseFloat(e.target.value))}
-                className="flex-1"
-              />
-              <span className="w-12 text-right text-foreground">{speed.toFixed(2)}</span>
-            </div>
+        {/* Sliders */}
+        <div className="flex-1 flex flex-col gap-1.5 text-sm min-w-0">
+          <label className="flex items-center gap-3 text-text-label">
+            <span className="w-16 text-xs shrink-0">Speed</span>
+            <input
+              type="range"
+              min="0.1"
+              max="1.0"
+              step="0.05"
+              value={speed}
+              onChange={(e) => setSpeed(parseFloat(e.target.value))}
+              className="flex-1 min-w-0"
+            />
+            <span className="w-10 text-right text-foreground text-xs font-mono">{speed.toFixed(2)}</span>
           </label>
-          <label className="flex items-center justify-between gap-3 text-text-label">
-            <span>Steering</span>
-            <div className="flex items-center gap-2 flex-1">
-              <input
-                type="range"
-                min="0.1"
-                max="0.6"
-                step="0.05"
-                value={turnRate}
-                onChange={(e) => setTurnRate(parseFloat(e.target.value))}
-                className="flex-1"
-              />
-              <span className="w-12 text-right text-foreground">{turnRate.toFixed(2)}</span>
-            </div>
+          <label className="flex items-center gap-3 text-text-label">
+            <span className="w-16 text-xs shrink-0">Steering</span>
+            <input
+              type="range"
+              min="0.1"
+              max="0.6"
+              step="0.05"
+              value={turnRate}
+              onChange={(e) => setTurnRate(parseFloat(e.target.value))}
+              className="flex-1 min-w-0"
+            />
+            <span className="w-10 text-right text-foreground text-xs font-mono">{turnRate.toFixed(2)}</span>
           </label>
-          <label className="flex items-center justify-between gap-3 text-text-label">
-            <span>Turn drive</span>
-            <div className="flex items-center gap-2 flex-1">
-              <input
-                type="range"
-                min="0.1"
-                max="1.0"
-                step="0.05"
-                value={turnSpeed}
-                onChange={(e) => setTurnSpeed(parseFloat(e.target.value))}
-                className="flex-1"
-              />
-              <span className="w-12 text-right text-foreground">{turnSpeed.toFixed(2)}</span>
-            </div>
+          <label className="flex items-center gap-3 text-text-label">
+            <span className="w-16 text-xs shrink-0">Turn drive</span>
+            <input
+              type="range"
+              min="0.1"
+              max="1.0"
+              step="0.05"
+              value={turnSpeed}
+              onChange={(e) => setTurnSpeed(parseFloat(e.target.value))}
+              className="flex-1 min-w-0"
+            />
+            <span className="w-10 text-right text-foreground text-xs font-mono">{turnSpeed.toFixed(2)}</span>
           </label>
         </div>
 
+        {/* Keyboard hint */}
+        {connected && (
+          <span className="text-xs text-text-dim shrink-0 hidden md:block">WASD / Arrows</span>
+        )}
         {!connected && (
-          <p className="text-xs text-text-dim text-center">Connect to robot to enable controls</p>
+          <span className="text-xs text-text-dim shrink-0">Not connected</span>
         )}
       </div>
     </div>

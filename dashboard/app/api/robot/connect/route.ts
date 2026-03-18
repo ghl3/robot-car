@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { getSSHConnection, executeCommand, getSudoPassword } from "@/lib/ssh";
 import type { SSHCredentials } from "@/lib/ssh";
 
-// The startup script runs on the Jetson. Written to /tmp/ and executed via nohup.
-// The heredoc delimiter is single-quoted ('SCRIPT_EOF') so $ is not expanded by the remote shell.
-// In JS template literals, $ without { is literal, so $VAR passes through as-is.
 // Fine-tune steering center after servo horn reinstall. Find the right value with:
 //   rosrun dynamic_reconfigure dynparam set /jetracer servo_bias <value>
 // then update this constant to persist it across restarts.
@@ -13,63 +12,13 @@ const SERVO_BIAS = 250;
 const REQUIRED_PKGS = [
   "ros-melodic-rosbridge-suite",
   "ros-melodic-web-video-server",
+  "ros-melodic-gmapping",
 ];
 
-const START_SCRIPT = [
-  "#!/bin/bash",
-  "",
-  "source /opt/ros/melodic/setup.bash",
-  "source ~/catkin_ws/devel/setup.bash",
-  "",
-  "roscore &",
-  "ROSCORE_PID=$!",
-  "sleep 5",
-  "",
-  "roslaunch jetracer jetracer.launch &",
-  "JETRACER_PID=$!",
-  "sleep 3",
-  "",
-  `# Set servo bias to correct steering center (0 = no correction)`,
-  `if [ ${SERVO_BIAS} -ne 0 ]; then`,
-  `    rosrun dynamic_reconfigure dynparam set /jetracer servo_bias ${SERVO_BIAS}`,
-  `fi`,
-  "",
-  "roslaunch jetracer csi_camera.launch &",
-  "CAMERA_PID=$!",
-  "",
-  "rosrun web_video_server web_video_server &",
-  "WEB_SERVER_PID=$!",
-  "",
-  "roslaunch rosbridge_server rosbridge_websocket.launch &",
-  "ROSBRIDGE_PID=$!",
-  "",
-  "cleanup() {",
-  '    echo "Stopping JetRacer processes..."',
-  "    kill $WEB_SERVER_PID 2>/dev/null",
-  "    kill $ROSBRIDGE_PID 2>/dev/null",
-  "    kill $CAMERA_PID 2>/dev/null",
-  "    kill $JETRACER_PID 2>/dev/null",
-  "    kill $ROSCORE_PID 2>/dev/null",
-  "    wait 2>/dev/null",
-  "    exit",
-  "}",
-  "trap cleanup SIGINT SIGTERM",
-  "",
-  "# Wait for rosbridge to be ready",
-  "for i in $(seq 1 30); do",
-  "    if bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null; then",
-  '        echo "rosbridge is ready"',
-  "        break",
-  "    fi",
-  "    sleep 1",
-  "done",
-  "",
-  'echo "JetRacer running. PID $$"',
-  "",
-  "while true; do",
-  "    sleep 1",
-  "done",
-].join("\n");
+function getStartScript(): string {
+  const raw = readFileSync(join(process.cwd(), "../scripts/start_jetracer.sh"), "utf-8");
+  return raw.replace(/__SERVO_BIAS__/g, String(SERVO_BIAS));
+}
 
 function sseEvent(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
@@ -84,6 +33,7 @@ function sudoCmd(command: string, sudoPass: string): string {
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const ip = body.ip as string | undefined;
+  const force = body.force === true;
   const creds: SSHCredentials = {
     username: body.username || undefined,
     password: body.password || undefined,
@@ -116,7 +66,7 @@ export async function POST(request: Request) {
             "bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null",
             creds
           );
-          if (check.exitCode === 0) {
+          if (check.exitCode === 0 && !force) {
             log("Services are already running!");
             send({
               type: "complete",
@@ -128,7 +78,7 @@ export async function POST(request: Request) {
             controller.close();
             return;
           }
-          log("SSH connected. Services not yet running.");
+          log(force ? "SSH connected. Force restart requested." : "SSH connected. Services not yet running.");
         } catch (err) {
           // If SSH itself failed, robot is unreachable
           const msg = (err as Error).message || String(err);
@@ -160,7 +110,7 @@ export async function POST(request: Request) {
         );
         if (!checkSudoers.stdout.includes("OK")) {
           log("Setting up passwordless sudo...");
-          const setupResult = await ssh.execCommand(
+          await ssh.execCommand(
             sudoCmd(`bash -c 'echo "${sudoersLine}" > /etc/sudoers.d/${username} && chmod 440 /etc/sudoers.d/${username}'`, sudoPass),
             { execOptions: { pty: true } }
           );
@@ -218,7 +168,7 @@ export async function POST(request: Request) {
         log("Uploading startup script...");
         const remotePath = "/tmp/start_jetracer.sh";
         await ssh.execCommand(
-          `cat > ${remotePath} << 'SCRIPT_EOF'\n${START_SCRIPT}\nSCRIPT_EOF`
+          `cat > ${remotePath} << 'SCRIPT_EOF'\n${getStartScript()}\nSCRIPT_EOF`
         );
         await ssh.execCommand(`chmod +x ${remotePath}`);
 
@@ -257,6 +207,15 @@ export async function POST(request: Request) {
         }
 
         if (rosbridgeUp) {
+          // Stream the startup log from the robot so user can see what happened
+          try {
+            const logResult = await executeCommand(ip, "cat /tmp/jetracer.log 2>/dev/null", creds);
+            if (logResult.stdout.trim()) {
+              for (const line of logResult.stdout.trim().split("\n")) {
+                log(`[robot] ${line}`);
+              }
+            }
+          } catch {}
           log("Rosbridge is ready!");
           send({
             type: "complete",

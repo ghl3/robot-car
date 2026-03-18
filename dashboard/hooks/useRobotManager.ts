@@ -8,6 +8,9 @@ interface SystemInfo {
   diskUsage: { size: string; used: string; available: string; percent: string } | null;
   uptime: string;
   ip: string;
+  lidarDetected: boolean;
+  lidarActive: boolean;
+  slamActive: boolean;
 }
 
 interface WifiNetwork {
@@ -97,6 +100,9 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
           diskUsage: data.diskUsage,
           uptime: data.uptime,
           ip: data.ip,
+          lidarDetected: data.lidarDetected ?? false,
+          lidarActive: data.lidarActive ?? false,
+          slamActive: data.slamActive ?? false,
         });
         setServicesRunning(data.rosRunning);
         setError(null);
@@ -142,7 +148,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
   }, []);
 
   const startServices = useCallback(
-    async (ip: string): Promise<ApiResponse> => {
+    async (ip: string, options?: { force?: boolean }): Promise<ApiResponse> => {
       setLoading("starting");
       setError(null);
       setStartupLogs([]);
@@ -151,7 +157,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
         const res = await fetch("/api/robot/connect", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(credBody({ ip })),
+          body: JSON.stringify(credBody({ ip, force: options?.force })),
         });
 
         // Check if it's an SSE stream or a regular JSON response (e.g. 400 error)
