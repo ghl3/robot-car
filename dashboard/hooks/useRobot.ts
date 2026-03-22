@@ -49,7 +49,6 @@ export function useRobot() {
     (targetIp: string) => {
       clearReconnect();
       const delay = Math.min(reconnectDelay.current, 30000);
-      console.log(`[useRobot] scheduling reconnect in ${delay}ms`);
       setStatus("reconnecting");
       reconnectTimer.current = setTimeout(async () => {
         reconnectDelay.current = Math.min(delay * 1.5, 30000);
@@ -59,32 +58,27 @@ export function useRobot() {
             try { rosInstance.close(); } catch {}
           }
           const wsUrl = `ws://${targetIp}:9090`;
-          console.log(`[useRobot] reconnecting to ${wsUrl}`);
           const ros = new roslib.Ros({ url: wsUrl });
 
           ros.on("connection", () => {
-            console.log(`[useRobot] reconnected to ${wsUrl}`);
             rosInstance = ros;
             topicCache.clear();
             reconnectDelay.current = 3000;
             setStatus("connected");
           });
 
-          ros.on("error", (err: unknown) => {
-            console.error("[useRobot] reconnect WebSocket error:", err);
+          ros.on("error", () => {
             if (!intentionalDisconnect.current) {
               scheduleReconnect(targetIp);
             }
           });
 
           ros.on("close", () => {
-            console.warn("[useRobot] reconnect WebSocket closed");
             if (!intentionalDisconnect.current) {
               scheduleReconnect(targetIp);
             }
           });
-        } catch (err) {
-          console.error("[useRobot] reconnect failed:", err);
+        } catch {
           if (!intentionalDisconnect.current) {
             scheduleReconnect(targetIp);
           }
@@ -102,11 +96,9 @@ export function useRobot() {
       setIpState(targetIp);
 
       const wsUrl = `ws://${targetIp}:9090`;
-      console.log(`[useRobot] connect() called — opening ${wsUrl}`);
 
       try {
         const roslib = await getRoslib();
-        console.log("[useRobot] roslib loaded, Ros:", typeof roslib.Ros);
         if (rosInstance) {
           try { rosInstance.close(); } catch {}
         }
@@ -114,28 +106,24 @@ export function useRobot() {
         const ros = new roslib.Ros({ url: wsUrl });
 
         ros.on("connection", () => {
-          console.log(`[useRobot] WebSocket connected to ${wsUrl}`);
           rosInstance = ros;
           reconnectDelay.current = 3000;
           setStoredIp(targetIp);
           setStatus("connected");
         });
 
-        ros.on("error", (err: unknown) => {
-          console.error("[useRobot] WebSocket error:", err);
+        ros.on("error", () => {
           if (!intentionalDisconnect.current && statusRef.current !== "disconnected") {
             scheduleReconnect(targetIp);
           }
         });
 
         ros.on("close", () => {
-          console.warn("[useRobot] WebSocket closed");
           if (!intentionalDisconnect.current && statusRef.current !== "disconnected") {
             scheduleReconnect(targetIp);
           }
         });
-      } catch (err) {
-        console.error("[useRobot] connect() failed:", err);
+      } catch {
         setStatus("disconnected");
       }
     },
@@ -154,22 +142,10 @@ export function useRobot() {
   }, [clearReconnect]);
 
   const publish: PublishFn = useCallback((topicName, messageType, data) => {
-    if (!rosInstance) {
-      console.warn("[publish] DROPPED — no rosInstance");
-      return;
-    }
-    if (!rosInstance.isConnected) {
-      console.warn("[publish] DROPPED — rosInstance.isConnected is false");
-      return;
-    }
-    if (!roslibModule) {
-      console.warn("[publish] DROPPED — roslib not loaded yet");
-      return;
-    }
+    if (!rosInstance || !rosInstance.isConnected || !roslibModule) return;
     const key = `${topicName}:${messageType}`;
     let topic = topicCache.get(key);
     if (!topic) {
-      console.log(`[publish] cache miss for ${key}, creating topic`);
       topic = new roslibModule.Topic({
         ros: rosInstance,
         name: topicName,
@@ -177,19 +153,7 @@ export function useRobot() {
       });
       topicCache.set(key, topic);
     }
-    try {
-      topic.publish(data);
-      const d = data as { linear?: { x?: number }; angular?: { z?: number } };
-      const lx = d.linear?.x ?? 0;
-      const az = d.angular?.z ?? 0;
-      if (lx === 0 && az === 0) {
-        console.trace(`[publish] ${topicName} STOP (0,0) — trace:`);
-      } else {
-        console.log(`[publish] ${topicName} lx=${lx} az=${az}`);
-      }
-    } catch (err) {
-      console.error(`[publish] ERROR on ${topicName}:`, err);
-    }
+    topic.publish(data);
   }, []);
 
   const getRos = useCallback((): Ros | null => rosInstance, []);

@@ -15,12 +15,19 @@ useRobot()          — connection lifecycle + publish()
 
 ## Publishing
 
-`publish()` creates a transient `Topic` object and calls `topic.publish(data)`. roslib auto-advertises internally via `callOnConnection()`, so no manual `advertise()` call or caching is needed. Creating a new `Topic` per call is intentional — it's a lightweight JS wrapper, not a network resource.
+`publish()` caches a `Topic` object per topic name and reuses it across calls. roslib auto-advertises internally on the first `publish()`, so no manual `advertise()` call is needed. The cache is cleared on disconnect/reconnect so stale topics referencing a dead `Ros` instance are not reused.
 
 ```typescript
-const topic = new roslib.Topic({ ros, name: topicName, messageType });
+// Simplified — see useRobot.ts for full implementation
+let topic = topicCache.get(key);
+if (!topic) {
+  topic = new roslibModule.Topic({ ros: rosInstance, name, messageType });
+  topicCache.set(key, topic);
+}
 topic.publish(data);
 ```
+
+**Important**: Topics must be reused — creating a new `Topic` per call causes rosbridge to receive repeated `advertise` ops from different objects, which breaks subsequent publishes. The function is synchronous (uses the pre-loaded `roslibModule` directly, no `await`).
 
 ## Subscribing
 
@@ -38,22 +45,26 @@ Subscribes to `/tf`, caches individual transform frames, and composes `map -> od
 
 ## Connection Lifecycle
 
-1. `connect(ip)` — creates a `Ros` instance with `ws://{ip}:9090`, registers event handlers
+1. `connect(ip)` — loads roslib, creates a `Ros` instance with `ws://{ip}:9090`, registers event handlers
 2. On close/error (unless intentional disconnect): `scheduleReconnect` with exponential backoff (3s initial, 1.5x growth, 30s max)
-3. `disconnect()` — sets `intentionalDisconnect` flag, closes the connection
+3. `disconnect()` — sets `intentionalDisconnect` flag, clears topic cache, closes the connection
 4. Subscription hooks create their own `Topic` instances in `useEffect` and unsubscribe on cleanup/disconnect
+
+## Critical: `getRos` Must Be Stable
+
+`getRos` is passed to all subscription hooks and appears in their `useEffect` dependency arrays. It **must** be memoized with `useCallback` — an inline arrow function creates a new reference on every render, which triggers all subscriptions to teardown and re-subscribe. This floods rosbridge with subscribe/unsubscribe churn that can crash it and silently drop publish messages.
 
 ## roslib v2.1.0 Behaviors
 
 - **Auto-advertise**: `Topic.publish()` calls `advertise()` internally if not yet advertised
 - **`callOnConnection`**: Messages are queued if the connection isn't ready yet and sent once connected
-- **`reconnect_on_close`**: Defaults to `true` in roslib — our manual reconnection handles this instead
+- **`reconnect_on_close`**: Defaults to `true` on Topics — handles re-subscribing/re-advertising when the Ros connection is restored
 
 ## Topic Map
 
 | Topic | Direction | Hook | Pattern | Data |
 |-------|-----------|------|---------|------|
-| `/cmd_vel` | publish | `useRobot.publish()` | transient Topic | `geometry_msgs/Twist` |
+| `/cmd_vel` | publish | `useRobot.publish()` | cached Topic | `geometry_msgs/Twist` |
 | `/scan` | subscribe | `useTopic` | state | `sensor_msgs/LaserScan` |
 | `/map` | subscribe | `useTopicRef` | ref + callback | `nav_msgs/OccupancyGrid` |
 | `/tf` | subscribe | `usePose` | ref + transform composition | `tf2_msgs/TFMessage` |
