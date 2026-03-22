@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRobot } from "@/hooks/useRobot";
+import { getStoredCredentials } from "@/lib/robot-config";
 import ConnectionBar from "@/components/ConnectionBar";
 import RobotManager from "@/components/RobotManager";
 import CameraFeed from "@/components/CameraFeed";
@@ -11,8 +12,12 @@ import DriveControls from "@/components/DriveControls";
 export default function Home() {
   const { status, ip, connect, disconnect, publish, getRos } = useRobot();
   const connected = status === "connected";
-  const [lidarInfo, setLidarInfo] = useState<{ lidarDetected: boolean; lidarActive: boolean; slamActive: boolean } | null>(null);
-  const handleSystemInfo = useCallback((info: { lidarDetected: boolean; lidarActive: boolean; slamActive: boolean } | null) => {
+  const [lidarInfo, setLidarInfo] = useState<{ lidarDetected: boolean; lidarActive: boolean; slamActive: boolean; recordingActive: boolean; playbackActive: boolean } | null>(null);
+  const credentials = useMemo(() => {
+    const stored = getStoredCredentials();
+    return { username: stored.username, password: stored.password };
+  }, []);
+  const handleSystemInfo = useCallback((info: { lidarDetected: boolean; lidarActive: boolean; slamActive: boolean; recordingActive: boolean; playbackActive: boolean } | null) => {
     setLidarInfo(info);
   }, []);
 
@@ -44,6 +49,10 @@ export default function Home() {
             lidarDetected={lidarInfo?.lidarDetected}
             lidarActive={lidarInfo?.lidarActive}
             slamActive={lidarInfo?.slamActive}
+            robotIp={ip || undefined}
+            credentials={credentials}
+            recordingActive={lidarInfo?.recordingActive}
+            playbackActive={lidarInfo?.playbackActive}
           />
         </div>
 

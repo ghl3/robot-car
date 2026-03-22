@@ -10,6 +10,7 @@ export type PublishFn = (topicName: string, messageType: string, data: Record<st
 
 let rosInstance: Ros | null = null;
 let roslibModule: typeof import("roslib") | null = null;
+const topicCache = new Map<string, InstanceType<typeof import("roslib").Topic>>();
 
 async function getRoslib() {
   if (!roslibModule) {
@@ -64,6 +65,7 @@ export function useRobot() {
           ros.on("connection", () => {
             console.log(`[useRobot] reconnected to ${wsUrl}`);
             rosInstance = ros;
+            topicCache.clear();
             reconnectDelay.current = 3000;
             setStatus("connected");
           });
@@ -143,6 +145,7 @@ export function useRobot() {
   const disconnect = useCallback(() => {
     intentionalDisconnect.current = true;
     clearReconnect();
+    topicCache.clear();
     if (rosInstance) {
       try { rosInstance.close(); } catch {}
       rosInstance = null;
@@ -150,16 +153,46 @@ export function useRobot() {
     setStatus("disconnected");
   }, [clearReconnect]);
 
-  const publish: PublishFn = useCallback(async (topicName, messageType, data) => {
-    if (!rosInstance || !rosInstance.isConnected) return;
-    const roslib = await getRoslib();
-    const topic = new roslib.Topic({
-      ros: rosInstance,
-      name: topicName,
-      messageType: messageType,
-    });
-    topic.publish(data);
+  const publish: PublishFn = useCallback((topicName, messageType, data) => {
+    if (!rosInstance) {
+      console.warn("[publish] DROPPED — no rosInstance");
+      return;
+    }
+    if (!rosInstance.isConnected) {
+      console.warn("[publish] DROPPED — rosInstance.isConnected is false");
+      return;
+    }
+    if (!roslibModule) {
+      console.warn("[publish] DROPPED — roslib not loaded yet");
+      return;
+    }
+    const key = `${topicName}:${messageType}`;
+    let topic = topicCache.get(key);
+    if (!topic) {
+      console.log(`[publish] cache miss for ${key}, creating topic`);
+      topic = new roslibModule.Topic({
+        ros: rosInstance,
+        name: topicName,
+        messageType,
+      });
+      topicCache.set(key, topic);
+    }
+    try {
+      topic.publish(data);
+      const d = data as { linear?: { x?: number }; angular?: { z?: number } };
+      const lx = d.linear?.x ?? 0;
+      const az = d.angular?.z ?? 0;
+      if (lx === 0 && az === 0) {
+        console.trace(`[publish] ${topicName} STOP (0,0) — trace:`);
+      } else {
+        console.log(`[publish] ${topicName} lx=${lx} az=${az}`);
+      }
+    } catch (err) {
+      console.error(`[publish] ERROR on ${topicName}:`, err);
+    }
   }, []);
 
-  return { status, ip, connect, disconnect, publish, getRos: (): Ros | null => rosInstance };
+  const getRos = useCallback((): Ros | null => rosInstance, []);
+
+  return { status, ip, connect, disconnect, publish, getRos };
 }

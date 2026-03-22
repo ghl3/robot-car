@@ -12,13 +12,14 @@ interface DPadButtonProps {
 }
 
 function DPadButton({ label, onStart, onStop, className = "" }: DPadButtonProps) {
+  const pressedRef = useRef(false);
   return (
     <button
-      onMouseDown={onStart}
-      onMouseUp={onStop}
-      onMouseLeave={onStop}
-      onTouchStart={(e) => { e.preventDefault(); onStart(); }}
-      onTouchEnd={(e) => { e.preventDefault(); onStop(); }}
+      onMouseDown={() => { pressedRef.current = true; onStart(); }}
+      onMouseUp={() => { if (pressedRef.current) { pressedRef.current = false; onStop(); } }}
+      onMouseLeave={() => { if (pressedRef.current) { pressedRef.current = false; onStop(); } }}
+      onTouchStart={(e) => { e.preventDefault(); pressedRef.current = true; onStart(); }}
+      onTouchEnd={(e) => { e.preventDefault(); if (pressedRef.current) { pressedRef.current = false; onStop(); } }}
       className={`flex items-center justify-center w-12 h-12 rounded bg-panel border-2 border-panel-border text-text-label font-mono text-xs font-bold select-none hover:bg-input-bg hover:border-accent-gold active:bg-input-bg active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] transition-colors ${className}`}
     >
       {label}
@@ -73,8 +74,7 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
       if (pressedRef.current.size === 0) {
         stop();
       } else {
-        startDirection(dir);
-        pressedRef.current.delete(dir);
+        // Other keys still held — recompute from remaining keys
         const p = pressedRef.current;
         let lx = 0, sa = 0;
         if (p.has("forward")) lx = speed;

@@ -13,6 +13,7 @@ const REQUIRED_PKGS = [
   "ros-melodic-rosbridge-suite",
   "ros-melodic-web-video-server",
   "ros-melodic-gmapping",
+  "ros-melodic-map-server",
 ];
 
 function getStartScript(): string {

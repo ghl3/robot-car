@@ -21,9 +21,12 @@ JETRACER_PID=$!
 sleep 3
 
 # Set servo bias to correct steering center (0 = no correction)
+# Run in background with timeout so it doesn't block startup if jetracer is slow to init
 SERVO_BIAS="__SERVO_BIAS__"
 if [ "$SERVO_BIAS" -ne 0 ] 2>/dev/null; then
-    rosrun dynamic_reconfigure dynparam set /jetracer servo_bias "$SERVO_BIAS"
+    (timeout 30 rosrun dynamic_reconfigure dynparam set /jetracer servo_bias "$SERVO_BIAS" \
+        && echo "Servo bias set to $SERVO_BIAS" \
+        || echo "Warning: failed to set servo bias") &
 fi
 
 roslaunch jetracer csi_camera.launch &

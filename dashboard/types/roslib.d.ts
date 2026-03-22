@@ -1,6 +1,6 @@
 declare module "roslib" {
   export class Ros {
-    constructor(options: { url: string });
+    constructor(options: { url: string; options?: Record<string, unknown> });
     isConnected: boolean;
     on(event: "connection" | "error" | "close", callback: (event?: unknown) => void): void;
     close(): void;

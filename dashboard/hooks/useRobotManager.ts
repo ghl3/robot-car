@@ -11,6 +11,8 @@ interface SystemInfo {
   lidarDetected: boolean;
   lidarActive: boolean;
   slamActive: boolean;
+  recordingActive: boolean;
+  playbackActive: boolean;
 }
 
 interface WifiNetwork {
@@ -103,6 +105,8 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
           lidarDetected: data.lidarDetected ?? false,
           lidarActive: data.lidarActive ?? false,
           slamActive: data.slamActive ?? false,
+          recordingActive: data.recordingActive ?? false,
+          playbackActive: data.playbackActive ?? false,
         });
         setServicesRunning(data.rosRunning);
         setError(null);

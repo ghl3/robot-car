@@ -99,7 +99,7 @@ interface RobotManagerProps {
   rosStatus: RosStatus;
   onConnect: (ip: string) => void;
   onDisconnect: () => void;
-  onSystemInfo?: (info: { lidarDetected: boolean; lidarActive: boolean; slamActive: boolean } | null) => void;
+  onSystemInfo?: (info: { lidarDetected: boolean; lidarActive: boolean; slamActive: boolean; recordingActive: boolean; playbackActive: boolean } | null) => void;
 }
 
 export default function RobotManager({ rosStatus, onConnect, onDisconnect, onSystemInfo }: RobotManagerProps) {
@@ -152,7 +152,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect, onSys
 
   // Propagate lidar status to parent
   useEffect(() => {
-    onSystemInfo?.(systemInfo ? { lidarDetected: systemInfo.lidarDetected, lidarActive: systemInfo.lidarActive, slamActive: systemInfo.slamActive } : null);
+    onSystemInfo?.(systemInfo ? { lidarDetected: systemInfo.lidarDetected, lidarActive: systemInfo.lidarActive, slamActive: systemInfo.slamActive, recordingActive: systemInfo.recordingActive, playbackActive: systemInfo.playbackActive } : null);
   }, [systemInfo, onSystemInfo]);
 
   // Auto-scroll log panel (scroll container only, not the page)
@@ -243,6 +243,7 @@ export default function RobotManager({ rosStatus, onConnect, onDisconnect, onSys
             {statusDot(isConnected, "Bridge")}
             {lidarDot()}
             {statusDot(systemInfo?.slamActive ?? false, "SLAM")}
+            {statusDot(systemInfo?.recordingActive ?? false, "REC")}
           </div>
         </div>
         <svg

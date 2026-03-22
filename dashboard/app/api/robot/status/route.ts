@@ -19,8 +19,8 @@ export async function GET(request: Request) {
 
     ssh = await getSSHConnection(ip, { username, password });
 
-    // Run all health checks in parallel
-    const [rosCheck, bridgeCheck, tempResult, memResult, diskResult, uptimeResult, ipResult, lidarDeviceResult, lidarTopicResult, slamResult] =
+    // Run all health checks in parallel (keep to ≤10 to avoid SSH channel/listener limits)
+    const [rosCheck, bridgeCheck, tempResult, memResult, diskResult, uptimeResult, ipResult, lidarDeviceResult, lidarTopicResult, processChecks] =
       await Promise.all([
         ssh.execCommand("pgrep -f roscore"),
         ssh.execCommand("bash -c 'echo > /dev/tcp/localhost/9090' 2>/dev/null"),
@@ -31,8 +31,16 @@ export async function GET(request: Request) {
         ssh.execCommand("hostname -I"),
         ssh.execCommand("test -e /dev/ttyACM1 && echo yes || echo"),
         ssh.execCommand("pgrep -f rplidarNode"),
-        ssh.execCommand("pgrep -f slam_gmapping"),
+        // Batch process checks into one command to stay under channel limit
+        // Use [r]osbag trick so grep/pgrep doesn't match itself
+        ssh.execCommand("slam=$(pgrep -c -f '[s]lam_gmapping' 2>/dev/null || echo 0); rec=$(pgrep -c -f '[r]osbag record' 2>/dev/null || echo 0); play=$(pgrep -c -f '[r]osbag play' 2>/dev/null || echo 0); echo slam=$slam rec=$rec play=$play"),
       ]);
+
+    // Parse batched process checks
+    const pcStr = processChecks.stdout;
+    const slamActive = /slam=([1-9])/.test(pcStr);
+    const recordingActive = /rec=([1-9])/.test(pcStr);
+    const playbackActive = /play=([1-9])/.test(pcStr);
 
     ssh.dispose();
 
@@ -74,7 +82,9 @@ export async function GET(request: Request) {
       ip: ipResult.stdout.trim().split(" ")[0],
       lidarDetected: lidarDeviceResult.stdout.trim() !== "",
       lidarActive: lidarTopicResult.code === 0,
-      slamActive: slamResult.code === 0,
+      slamActive,
+      recordingActive,
+      playbackActive,
     });
   } catch (error) {
     if (ssh) ssh.dispose();
