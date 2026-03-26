@@ -8,10 +8,11 @@ interface DPadButtonProps {
   label: string;
   onStart: () => void;
   onStop: () => void;
+  active?: boolean;
   className?: string;
 }
 
-function DPadButton({ label, onStart, onStop, className = "" }: DPadButtonProps) {
+function DPadButton({ label, onStart, onStop, active = false, className = "" }: DPadButtonProps) {
   const pressedRef = useRef(false);
   return (
     <button
@@ -20,10 +21,28 @@ function DPadButton({ label, onStart, onStop, className = "" }: DPadButtonProps)
       onMouseLeave={() => { if (pressedRef.current) { pressedRef.current = false; onStop(); } }}
       onTouchStart={(e) => { e.preventDefault(); pressedRef.current = true; onStart(); }}
       onTouchEnd={(e) => { e.preventDefault(); if (pressedRef.current) { pressedRef.current = false; onStop(); } }}
-      className={`flex items-center justify-center w-12 h-12 rounded bg-panel border-2 border-panel-border text-text-label font-mono text-xs font-bold select-none hover:bg-input-bg hover:border-accent-gold active:bg-input-bg active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] transition-colors ${className}`}
+      className={`flex items-center justify-center w-14 h-14 rounded border-2 font-mono text-xs font-bold select-none transition-colors ${
+        active
+          ? "bg-accent-gold text-white border-accent-gold-dim"
+          : "bg-panel border-panel-border text-text-label hover:bg-input-bg hover:border-accent-gold active:bg-input-bg active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+      } ${className}`}
     >
       {label}
     </button>
+  );
+}
+
+function KeyCap({ label, active }: { label: string; active: boolean }) {
+  return (
+    <div
+      className={`flex items-center justify-center w-7 h-7 rounded text-[10px] font-mono font-bold border transition-colors ${
+        active
+          ? "bg-accent-gold text-white border-accent-gold-dim"
+          : "bg-input-bg text-text-dim border-panel-border"
+      }`}
+    >
+      {label}
+    </div>
   );
 }
 
@@ -36,10 +55,13 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
   const [speed, setSpeed] = useState(0.5);
   const [turnRate, setTurnRate] = useState(0.6);
   const [turnSpeed, setTurnSpeed] = useState(0.35);
+  const [dpadActive, setDpadActive] = useState<Set<string>>(new Set());
   const pressedRef = useRef(new Set<string>());
   const connected = status === "connected";
 
-  useKeyboardControls(publish, status, speed, turnRate, turnSpeed);
+  const { activeKeys } = useKeyboardControls(publish, status, speed, turnRate, turnSpeed);
+
+  const isActive = (dir: string) => activeKeys.has(dir) || dpadActive.has(dir);
 
   const sendCmd = useCallback(
     (linearX: number, steeringAngle: number) => {
@@ -57,6 +79,7 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
   const startDirection = useCallback(
     (dir: string) => {
       pressedRef.current.add(dir);
+      setDpadActive(new Set(pressedRef.current));
       const p = pressedRef.current;
       let lx = 0, sa = 0;
       if (p.has("forward")) lx = speed;
@@ -71,10 +94,10 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
   const stopDirection = useCallback(
     (dir: string) => {
       pressedRef.current.delete(dir);
+      setDpadActive(new Set(pressedRef.current));
       if (pressedRef.current.size === 0) {
         stop();
       } else {
-        // Other keys still held — recompute from remaining keys
         const p = pressedRef.current;
         let lx = 0, sa = 0;
         if (p.has("forward")) lx = speed;
@@ -88,32 +111,49 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
   );
 
   return (
-    <div className="bg-panel border border-panel-border rounded overflow-hidden shadow-sm">
-      <div className="px-4 py-2 flex items-center gap-6">
+    <div className={`bg-panel border border-panel-border rounded overflow-hidden shadow-sm ${!connected ? "opacity-50 pointer-events-none" : ""}`}>
+      <div className="bg-panel-header px-3 py-1">
+        <span className="text-panel-header-text text-xs font-bold tracking-wider">DRIVE CONTROLS</span>
+      </div>
+      <div className="px-4 py-2 flex items-center justify-center gap-8">
         {/* D-Pad */}
         <div className="grid grid-cols-3 gap-0.5 shrink-0">
           <div />
           <DPadButton
             label="FWD"
+            active={isActive("forward")}
             onStart={() => startDirection("forward")}
             onStop={() => stopDirection("forward")}
           />
           <div />
           <DPadButton
             label="LEFT"
+            active={isActive("left")}
             onStart={() => startDirection("left")}
             onStop={() => stopDirection("left")}
           />
           <DPadButton
             label="REV"
+            active={isActive("backward")}
             onStart={() => startDirection("backward")}
             onStop={() => stopDirection("backward")}
           />
           <DPadButton
             label="RIGHT"
+            active={isActive("right")}
             onStart={() => startDirection("right")}
             onStop={() => stopDirection("right")}
           />
+        </div>
+
+        {/* WASD Indicator */}
+        <div className="shrink-0 flex flex-col items-center gap-0.5">
+          <KeyCap label="W" active={isActive("forward")} />
+          <div className="flex gap-0.5">
+            <KeyCap label="A" active={isActive("left")} />
+            <KeyCap label="S" active={isActive("backward")} />
+            <KeyCap label="D" active={isActive("right")} />
+          </div>
         </div>
 
         {/* Emergency Stop */}
@@ -125,7 +165,7 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
         </button>
 
         {/* Sliders */}
-        <div className="flex-1 flex flex-col gap-1.5 text-sm min-w-0">
+        <div className="w-56 flex flex-col gap-1.5 text-sm">
           <label className="flex items-center gap-3 text-text-label">
             <span className="w-16 text-xs shrink-0">Speed</span>
             <input
@@ -166,14 +206,6 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
             <span className="w-10 text-right text-foreground text-xs font-mono">{turnSpeed.toFixed(2)}</span>
           </label>
         </div>
-
-        {/* Keyboard hint */}
-        {connected && (
-          <span className="text-xs text-text-dim shrink-0 hidden md:block">WASD / Arrows</span>
-        )}
-        {!connected && (
-          <span className="text-xs text-text-dim shrink-0">Not connected</span>
-        )}
       </div>
     </div>
   );

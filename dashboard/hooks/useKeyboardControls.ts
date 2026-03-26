@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import type { PublishFn, RosStatus } from "@/hooks/useRobot";
 
 const KEY_MAP: Record<string, string> = {
@@ -17,8 +17,13 @@ const KEY_MAP: Record<string, string> = {
 
 export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed = 0.5, turnRate = 0.6, turnSpeed = 0.35) {
   const activeKeys = useRef(new Set<string>());
+  const [activeKeysState, setActiveKeysState] = useState<Set<string>>(new Set());
   const lastPublish = useRef(0);
   const publishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const syncActiveKeys = useCallback(() => {
+    setActiveKeysState(new Set(activeKeys.current));
+  }, []);
 
   const sendCommand = useCallback(
     (linearX: number, steeringAngle: number) => {
@@ -79,12 +84,14 @@ export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed
 
       if (action === "stop") {
         activeKeys.current.clear();
+        syncActiveKeys();
         sendCommand(0, 0);
         return;
       }
 
       if (!activeKeys.current.has(action)) {
         activeKeys.current.add(action);
+        syncActiveKeys();
         computeAndSend();
       }
     };
@@ -95,6 +102,7 @@ export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed
       e.preventDefault();
 
       activeKeys.current.delete(action);
+      syncActiveKeys();
       computeAndSend();
     };
 
@@ -105,12 +113,13 @@ export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       activeKeys.current.clear();
+      syncActiveKeys();
       if (publishTimer.current) {
         clearTimeout(publishTimer.current);
         publishTimer.current = null;
       }
     };
-  }, [status, computeAndSend, sendCommand]);
+  }, [status, computeAndSend, sendCommand, syncActiveKeys]);
 
-  return { activeKeys: activeKeys.current };
+  return { activeKeys: activeKeysState };
 }
