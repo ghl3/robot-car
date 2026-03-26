@@ -33,7 +33,7 @@ export async function GET(request: Request) {
         ssh.execCommand("pgrep -f rplidarNode"),
         // Batch process checks into one command to stay under channel limit
         // Use [r]osbag trick so grep/pgrep doesn't match itself
-        ssh.execCommand("slam=$(pgrep -c -f '[s]lam_gmapping' 2>/dev/null || echo 0); rec=$(pgrep -c -f '[r]osbag record' 2>/dev/null || echo 0); play=$(pgrep -c -f '[r]osbag play' 2>/dev/null || echo 0); echo slam=$slam rec=$rec play=$play"),
+        ssh.execCommand("slam=$(pgrep -c -f '[s]lam_gmapping' 2>/dev/null || echo 0); rec=$(pgrep -c -f '[r]osbag record' 2>/dev/null || echo 0); play=$(pgrep -c -f '[r]osbag play' 2>/dev/null || echo 0); cam=$(pgrep -c -f '[g]scam' 2>/dev/null || echo 0); wvs=$(pgrep -c -f '[w]eb_video_server' 2>/dev/null || echo 0); echo slam=$slam rec=$rec play=$play cam=$cam wvs=$wvs"),
       ]);
 
     // Parse batched process checks
@@ -41,6 +41,8 @@ export async function GET(request: Request) {
     const slamActive = /slam=([1-9])/.test(pcStr);
     const recordingActive = /rec=([1-9])/.test(pcStr);
     const playbackActive = /play=([1-9])/.test(pcStr);
+    const cameraActive = /cam=([1-9])/.test(pcStr);
+    const webVideoServerActive = /wvs=([1-9])/.test(pcStr);
 
     ssh.dispose();
 
@@ -85,6 +87,8 @@ export async function GET(request: Request) {
       slamActive,
       recordingActive,
       playbackActive,
+      cameraActive,
+      webVideoServerActive,
     });
   } catch (error) {
     if (ssh) ssh.dispose();

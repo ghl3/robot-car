@@ -13,6 +13,8 @@ interface SystemInfo {
   slamActive: boolean;
   recordingActive: boolean;
   playbackActive: boolean;
+  cameraActive: boolean;
+  webVideoServerActive: boolean;
 }
 
 interface WifiNetwork {
@@ -58,6 +60,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const ipRef = useRef(robotIp);
   const credsRef = useRef(credentials);
+  const failCountRef = useRef(0);
 
   useEffect(() => {
     ipRef.current = robotIp;
@@ -96,6 +99,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
       const res = await fetch(`/api/robot/status?${credParams(ip)}`);
       const data = await res.json();
       if (data.success) {
+        failCountRef.current = 0;
         setSystemInfo({
           temps: (data.temps as Record<string, number>) || {},
           memoryUsage: data.memoryUsage,
@@ -107,18 +111,27 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
           slamActive: data.slamActive ?? false,
           recordingActive: data.recordingActive ?? false,
           playbackActive: data.playbackActive ?? false,
+          cameraActive: data.cameraActive ?? false,
+          webVideoServerActive: data.webVideoServerActive ?? false,
         });
         setServicesRunning(data.rosRunning);
         setError(null);
         return data as ApiResponse;
       } else {
-        setServicesRunning(false);
-        setSystemInfo(null);
+        // Keep last known state for a few failures before clearing
+        failCountRef.current++;
+        if (failCountRef.current >= 3) {
+          setServicesRunning(false);
+          setSystemInfo(null);
+        }
         return null;
       }
     } catch {
-      setServicesRunning(false);
-      setSystemInfo(null);
+      failCountRef.current++;
+      if (failCountRef.current >= 3) {
+        setServicesRunning(false);
+        setSystemInfo(null);
+      }
       return null;
     }
   }, [credParams]);
@@ -307,6 +320,19 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
     }
   }, [credBody]);
 
+  const restartComponent = useCallback(async (component: string): Promise<ApiResponse> => {
+    try {
+      const res = await fetch("/api/robot/restart-component", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credBody({ ip: ipRef.current, component })),
+      });
+      return await res.json() as ApiResponse;
+    } catch (err) {
+      return { success: false, message: (err as Error).message };
+    }
+  }, [credBody]);
+
   return {
     servicesRunning,
     systemInfo,
@@ -315,6 +341,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
     wifiNetworks,
     currentNetwork,
     startupLogs,
+    isPolling: pollRef.current !== null,
     startServices,
     stopServices,
     shutdown,
@@ -324,5 +351,6 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
     startPolling,
     stopPolling,
     clearStartupLogs,
+    restartComponent,
   };
 }
