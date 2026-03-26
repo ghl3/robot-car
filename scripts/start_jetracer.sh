@@ -77,12 +77,39 @@ while true; do
             rosrun gmapping slam_gmapping \
                 _base_frame:=base_footprint \
                 _odom_frame:=odom \
-                _map_update_interval:=2.0 \
+                _map_update_interval:=1.0 \
                 _maxUrange:=6.0 \
-                _particles:=30 &
+                _maxRange:=8.0 \
+                _particles:=30 \
+                _linearUpdate:=0.1 \
+                _angularUpdate:=0.15 \
+                _temporalUpdate:=2.0 \
+                _delta:=0.03 \
+                _xmin:=-10.0 \
+                _xmax:=10.0 \
+                _ymin:=-10.0 \
+                _ymax:=10.0 \
+                _minimumScore:=50 &
             GMAPPING_PID=$!
             echo "gmapping SLAM started (PID $GMAPPING_PID)"
         fi
     fi
+
+    # Camera watchdog
+    if ! kill -0 $CAMERA_PID 2>/dev/null; then
+        echo "Camera (gscam) died, restarting..."
+        roslaunch jetracer csi_camera.launch &
+        CAMERA_PID=$!
+        echo "Camera restarted (PID $CAMERA_PID)"
+    fi
+
+    # Web video server watchdog
+    if ! kill -0 $WEB_SERVER_PID 2>/dev/null; then
+        echo "web_video_server died, restarting..."
+        rosrun web_video_server web_video_server &
+        WEB_SERVER_PID=$!
+        echo "web_video_server restarted (PID $WEB_SERVER_PID)"
+    fi
+
     sleep 5
 done
