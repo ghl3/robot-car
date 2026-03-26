@@ -30,12 +30,12 @@ interface OccupancyGrid {
 
 // Vintage color scheme
 const BG_COLOR = "#ece7e0";
-const FREE_COLOR = [255, 255, 255, 255] as const;       // white
-const OCCUPIED_COLOR = [196, 48, 32, 255] as const;      // dark red
-const UNKNOWN_COLOR = [224, 219, 212, 255] as const;     // warm cream
+const FREE_COLOR = [255, 255, 255, 255] as const;         // white (explored free space)
+const OCCUPIED_LOW = [220, 160, 120] as const;            // warm tan (low occupancy)
+const OCCUPIED_HIGH = [196, 48, 32] as const;             // dark red (high occupancy)
+const UNKNOWN_COLOR = [0, 0, 0, 0] as const;              // transparent (shows background through)
 const SCAN_COLOR = "#daa520";                             // gold for live scan
 const ROBOT_COLOR = "#b8952a";                            // brass for robot
-const TRAIL_COLOR = "rgba(218, 165, 32, 0.4)";
 const GRID_COLOR = "rgba(180, 150, 80, 0.12)";
 
 interface MapViewerProps {
@@ -71,6 +71,8 @@ export default function MapViewer({
   const mapImageRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
+  const mapStatsRef = useRef({ free: 0, occupied: 0, total: 0 });
+
   // Camera state for pan/zoom
   const zoomRef = useRef(1);
   const panRef = useRef({ x: 0, y: 0 });
@@ -83,6 +85,10 @@ export default function MapViewer({
   // Phase 2: Odometry trail
   const trailRef = useRef<Array<{ x: number; y: number }>>([]);
   const lastTrailPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  // View mode toggle
+  const [viewMode, setViewMode] = useState<"lidar" | "slam">("lidar");
+  const autoSwitchedRef = useRef(false);
 
   // Phase 3: Map save/load state
   const [savedMaps, setSavedMaps] = useState<SavedMap[]>([]);
@@ -142,6 +148,7 @@ export default function MapViewer({
 
     const imageData = ctx.createImageData(width, height);
     const pixels = imageData.data;
+    let freeCount = 0, occupiedCount = 0;
 
     for (let i = 0; i < grid.data.length; i++) {
       const val = grid.data[i];
@@ -155,30 +162,43 @@ export default function MapViewer({
         pixels[pi + 2] = UNKNOWN_COLOR[2];
         pixels[pi + 3] = UNKNOWN_COLOR[3];
       } else if (val === 0) {
+        freeCount++;
         pixels[pi] = FREE_COLOR[0];
         pixels[pi + 1] = FREE_COLOR[1];
         pixels[pi + 2] = FREE_COLOR[2];
         pixels[pi + 3] = FREE_COLOR[3];
       } else {
+        occupiedCount++;
         const t = val / 100;
-        pixels[pi] = Math.round(255 - t * (255 - OCCUPIED_COLOR[0]));
-        pixels[pi + 1] = Math.round(255 - t * (255 - OCCUPIED_COLOR[1]));
-        pixels[pi + 2] = Math.round(255 - t * (255 - OCCUPIED_COLOR[2]));
+        pixels[pi] = Math.round(OCCUPIED_LOW[0] + t * (OCCUPIED_HIGH[0] - OCCUPIED_LOW[0]));
+        pixels[pi + 1] = Math.round(OCCUPIED_LOW[1] + t * (OCCUPIED_HIGH[1] - OCCUPIED_LOW[1]));
+        pixels[pi + 2] = Math.round(OCCUPIED_LOW[2] + t * (OCCUPIED_HIGH[2] - OCCUPIED_LOW[2]));
         pixels[pi + 3] = 255;
       }
     }
 
     ctx.putImageData(imageData, 0, 0);
+    mapStatsRef.current = { free: freeCount, occupied: occupiedCount, total: grid.data.length };
   }, []);
 
   // Subscribe to /map via ref-based hook (large messages, no re-renders)
   useTopicRef<OccupancyGrid>("/map", "nav_msgs/OccupancyGrid", getRos, connected, rebuildMapImage);
 
-  // Clear map data on disconnect
+  // Auto-switch to SLAM view when first map data arrives
+  useEffect(() => {
+    if (mapRef.current && mapImageRef.current && !autoSwitchedRef.current) {
+      autoSwitchedRef.current = true;
+      setViewMode("slam");
+    }
+  });
+
+  // Clear map and scan data on disconnect
   useEffect(() => {
     if (!connected) {
       mapRef.current = null;
       mapImageRef.current = null;
+      scanRef.current = null;
+      autoSwitchedRef.current = false;
     }
   }, [connected]);
 
@@ -359,13 +379,15 @@ export default function MapViewer({
   // Helper: convert world coords to screen coords (used in draw loop)
   // Defined inside draw so it captures the current transform state
 
-  // Animation loop
+  // Animation loop — wrapped in try/catch to prevent requestAnimationFrame chain from breaking
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) { animFrameRef.current = requestAnimationFrame(draw); return; }
 
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) { animFrameRef.current = requestAnimationFrame(draw); return; }
+
+   try {
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
 
@@ -389,7 +411,7 @@ export default function MapViewer({
     const mapImage = mapImageRef.current;
     const pose = poseRef.current;
 
-    if (map && mapImage) {
+    if (viewMode === "slam" && map && mapImage) {
       const { resolution, width: mw, height: mh, origin } = map.info;
 
       // Pixels per meter on screen
@@ -440,7 +462,7 @@ export default function MapViewer({
         }
       }
       for (let gy = -50; gy <= 50; gy++) {
-        const screenY = robotScreenY + (gy - pose.y) * scale;
+        const screenY = robotScreenY - (gy - pose.y) * scale;
         if (screenY >= 0 && screenY <= h) {
           ctx.moveTo(0, screenY);
           ctx.lineTo(w, screenY);
@@ -468,52 +490,53 @@ export default function MapViewer({
       }
 
       if (trail.length > 1) {
-        ctx.strokeStyle = TRAIL_COLOR;
-        ctx.lineWidth = 2.5;
+        const segCount = Math.min(trail.length - 1, 10);
+        const segSize = Math.ceil((trail.length - 1) / segCount);
+
+        ctx.lineWidth = 3.5;
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
-        ctx.beginPath();
-        const p0 = worldToScreen(trail[0].x, trail[0].y);
-        ctx.moveTo(p0.sx, p0.sy);
-        for (let i = 1; i < trail.length; i++) {
-          const p = worldToScreen(trail[i].x, trail[i].y);
-          ctx.lineTo(p.sx, p.sy);
-        }
-        ctx.stroke();
-      }
 
-      // Overlay live scan points (rotated by robot heading)
-      const scan = scanRef.current;
-      if (scan) {
-        ctx.fillStyle = SCAN_COLOR;
-        const { angle_min, angle_increment, ranges, range_min, range_max } = scan;
-        const theta = pose.theta;
-        for (let i = 0; i < ranges.length; i++) {
-          const range = ranges[i];
-          if (range < range_min || range > range_max) continue;
-          const angle = angle_min + angle_increment * i + theta;
-          // In ROS, x is forward. On screen, we need to map:
-          // world x (forward) -> screen up (-y), world y (left) -> screen left (-x)
-          const wx = pose.x + Math.cos(angle) * range;
-          const wy = pose.y + Math.sin(angle) * range;
-          const sp = worldToScreen(wx, wy);
+        for (let s = 0; s < segCount; s++) {
+          const startIdx = s * segSize;
+          const endIdx = Math.min(startIdx + segSize, trail.length - 1);
+          const alpha = 0.2 + 0.65 * ((s + 1) / segCount);
+          ctx.strokeStyle = `rgba(180, 90, 20, ${alpha})`;
           ctx.beginPath();
-          ctx.arc(sp.sx, sp.sy, 2, 0, 2 * Math.PI);
-          ctx.fill();
+          const p0 = worldToScreen(trail[startIdx].x, trail[startIdx].y);
+          ctx.moveTo(p0.sx, p0.sy);
+          for (let i = startIdx + 1; i <= endIdx; i++) {
+            const p = worldToScreen(trail[i].x, trail[i].y);
+            ctx.lineTo(p.sx, p.sy);
+          }
+          ctx.stroke();
         }
       }
 
-      // Robot marker — arrow pointing in heading direction
+      // Scan dots are NOT drawn in map view — the map is built from LIDAR scans
+      // so overlaying them is redundant and visually noisy (they update at different rates).
+      // Scan dots are shown in the scan-only view (no map) below.
+
+      // Robot marker — arrow with halo for visibility
       ctx.save();
       ctx.translate(robotScreenX, robotScreenY);
-      // Convert ROS heading to screen angle: ROS theta=0 is +x (right),
-      // but in map pixel space Y is flipped, so screen angle = -theta
       ctx.rotate(-pose.theta - Math.PI / 2);
+      const arrowLen = 18;
+      const arrowWidth = 10;
+      // White halo outline for contrast
+      ctx.strokeStyle = "rgba(255,255,255,0.8)";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(arrowLen, 0);
+      ctx.lineTo(-arrowWidth, -arrowWidth);
+      ctx.lineTo(-arrowWidth * 0.3, 0);
+      ctx.lineTo(-arrowWidth, arrowWidth);
+      ctx.closePath();
+      ctx.stroke();
+      // Fill and inner stroke
       ctx.fillStyle = ROBOT_COLOR;
       ctx.strokeStyle = ROBOT_COLOR;
       ctx.lineWidth = 2;
-      const arrowLen = 16;
-      const arrowWidth = 8;
       ctx.beginPath();
       ctx.moveTo(arrowLen, 0);
       ctx.lineTo(-arrowWidth, -arrowWidth);
@@ -523,6 +546,33 @@ export default function MapViewer({
       ctx.fill();
       ctx.stroke();
       ctx.restore();
+
+      // Map metadata overlay
+      {
+        const stats = mapStatsRef.current;
+        const known = stats.free + stats.occupied;
+        const pct = stats.total > 0 ? Math.round(100 * known / stats.total) : 0;
+        const res = map.info.resolution;
+        const lines = [
+          `${mw}×${mh} @ ${(res * 100).toFixed(0)}cm/cell`,
+          `${pct}% explored (${known.toLocaleString()} cells)`,
+        ];
+        const lineHeight = 13;
+        const padding = 6;
+        const boxW = 190;
+        const boxH = lines.length * lineHeight + padding * 2;
+        const boxX = 8;
+        const boxY = h - boxH - 8;
+        ctx.save();
+        ctx.fillStyle = "rgba(236, 231, 224, 0.85)";
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+        ctx.font = "10px monospace";
+        ctx.fillStyle = "rgba(90, 74, 56, 0.8)";
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], boxX + padding, boxY + padding + (i + 1) * lineHeight - 2);
+        }
+        ctx.restore();
+      }
 
       // Phase 4: Playback indicator
       if (isPlaying) {
@@ -603,8 +653,11 @@ export default function MapViewer({
       }
     }
 
+   } catch {
+    // Prevent draw loop from dying on transient errors
+   }
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [poseRef, isPlaying]);
+  }, [poseRef, isPlaying, viewMode]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);
@@ -622,7 +675,31 @@ export default function MapViewer({
     <div className="bg-panel border border-panel-border rounded overflow-hidden shadow-sm h-full flex flex-col">
       <div className="bg-panel-header border-b border-panel-border uppercase tracking-widest text-xs text-panel-header-text px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span>SLAM MAP</span>
+          <span>MAP</span>
+          {/* View mode toggle */}
+          <div className="flex rounded overflow-hidden border border-panel-header-text/30">
+            <button
+              onClick={() => setViewMode("lidar")}
+              className={`px-2 py-0.5 text-[10px] font-bold tracking-wider transition-colors ${
+                viewMode === "lidar"
+                  ? "bg-panel-header-text/20 text-panel-header-text"
+                  : "text-panel-header-text/50 hover:text-panel-header-text/80"
+              }`}
+            >
+              LIDAR
+            </button>
+            <button
+              onClick={() => { if (mapRef.current) setViewMode("slam"); }}
+              disabled={!mapRef.current}
+              className={`px-2 py-0.5 text-[10px] font-bold tracking-wider transition-colors ${
+                viewMode === "slam"
+                  ? "bg-panel-header-text/20 text-panel-header-text"
+                  : "text-panel-header-text/50 hover:text-panel-header-text/80 disabled:opacity-30 disabled:cursor-not-allowed"
+              }`}
+            >
+              SLAM
+            </button>
+          </div>
           {isRecording && (
             <span className="flex items-center gap-1 text-accent-red animate-pulse normal-case tracking-normal">
               <span className="inline-block w-2 h-2 rounded-full bg-accent-red" />
@@ -630,17 +707,19 @@ export default function MapViewer({
             </span>
           )}
         </div>
-        <button
-          onClick={clearTrail}
-          className="text-panel-header-text/60 hover:text-panel-header-text text-xs normal-case tracking-normal transition-colors"
-          title="Clear trail"
-        >
-          Clear Trail
-        </button>
+        {viewMode === "slam" && (
+          <button
+            onClick={clearTrail}
+            className="text-panel-header-text/60 hover:text-panel-header-text text-xs normal-case tracking-normal transition-colors"
+            title="Clear trail"
+          >
+            Clear Trail
+          </button>
+        )}
       </div>
 
-      {/* Toolbar */}
-      {connected && robotIp && (
+      {/* Toolbar — SLAM mode only */}
+      {connected && robotIp && viewMode === "slam" && (
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-panel-border bg-panel text-xs">
           {/* Map save */}
           <button
