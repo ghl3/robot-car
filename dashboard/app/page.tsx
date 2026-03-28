@@ -64,8 +64,7 @@ export default function Home() {
             slamActive={systemInfo?.slamActive}
             robotIp={ip || undefined}
             credentials={credentials}
-            recordingActive={systemInfo?.recordingActive}
-            playbackActive={systemInfo?.playbackActive}
+            onRestartComponent={async (c) => { await restartComponentRef.current?.(c); }}
           />
         </div>
 

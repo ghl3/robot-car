@@ -77,19 +77,26 @@ while true; do
             rosrun gmapping slam_gmapping \
                 _base_frame:=base_footprint \
                 _odom_frame:=odom \
-                _map_update_interval:=0.5 \
+                _map_update_interval:=1.0 \
                 _maxUrange:=6.0 \
                 _maxRange:=8.0 \
-                _particles:=30 \
-                _linearUpdate:=0.05 \
-                _angularUpdate:=0.1 \
-                _temporalUpdate:=0.5 \
-                _delta:=0.03 \
-                _xmin:=-10.0 \
-                _xmax:=10.0 \
-                _ymin:=-10.0 \
-                _ymax:=10.0 \
-                _minimumScore:=50 &
+                _particles:=80 \
+                _linearUpdate:=0.15 \
+                _angularUpdate:=0.25 \
+                _temporalUpdate:=3.0 \
+                _delta:=0.05 \
+                _xmin:=-15.0 \
+                _xmax:=15.0 \
+                _ymin:=-15.0 \
+                _ymax:=15.0 \
+                _minimumScore:=200 \
+                _srr:=0.1 \
+                _srt:=0.2 \
+                _str:=0.1 \
+                _stt:=0.2 \
+                _iterations:=5 \
+                _lstep:=0.05 \
+                _astep:=0.05 &
             GMAPPING_PID=$!
             echo "gmapping SLAM started (PID $GMAPPING_PID)"
         fi

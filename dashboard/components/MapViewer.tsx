@@ -46,24 +46,12 @@ interface MapViewerProps {
   slamActive?: boolean;
   robotIp?: string;
   credentials?: { username: string; password: string };
-  recordingActive?: boolean;
-  playbackActive?: boolean;
-}
-
-interface SavedMap {
-  name: string;
-  timestamp: number;
-}
-
-interface SavedBag {
-  name: string;
-  size: string;
-  timestamp: number;
+  onRestartComponent?: (component: string) => Promise<unknown>;
 }
 
 export default function MapViewer({
   status, getRos, lidarDetected, lidarActive, slamActive,
-  robotIp, credentials, recordingActive, playbackActive,
+  robotIp, credentials, onRestartComponent,
 }: MapViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scanRef = useRef<LaserScan | null>(null);
@@ -89,38 +77,9 @@ export default function MapViewer({
   // View mode toggle
   const [viewMode, setViewMode] = useState<"lidar" | "slam">("lidar");
   const autoSwitchedRef = useRef(false);
-
-  // Phase 3: Map save/load state
-  const [savedMaps, setSavedMaps] = useState<SavedMap[]>([]);
-  const [showMaps, setShowMaps] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
-
-  // Phase 4: Rosbag state
-  const [savedBags, setSavedBags] = useState<SavedBag[]>([]);
-  const [showBags, setShowBags] = useState(false);
-  const [localRecording, setLocalRecording] = useState(false);
-  const [recordingStart, setRecordingStart] = useState<number | null>(null);
-  const [recordingElapsed, setRecordingElapsed] = useState("");
+  const [resettingMap, setResettingMap] = useState(false);
 
   const connected = status === "connected";
-  const isRecording = recordingActive || localRecording;
-  const isPlaying = playbackActive ?? false;
-
-  // Helper for API calls with credentials
-  const credParams = useCallback(() => {
-    const params = new URLSearchParams();
-    if (robotIp) params.set("ip", robotIp);
-    if (credentials?.username) params.set("username", credentials.username);
-    if (credentials?.password) params.set("password", credentials.password);
-    return params.toString();
-  }, [robotIp, credentials]);
-
-  const credBody = useCallback((data: Record<string, unknown>) => ({
-    ...data,
-    ip: robotIp,
-    username: credentials?.username,
-    password: credentials?.password,
-  }), [robotIp, credentials]);
 
   // Subscribe to /scan via useTopic (small, fast messages)
   const scanMessage = useTopic("/scan", "sensor_msgs/LaserScan", getRos, connected);
@@ -215,21 +174,6 @@ export default function MapViewer({
     }
   }, [connected]);
 
-  // Recording elapsed timer
-  useEffect(() => {
-    if (!recordingStart) {
-      setRecordingElapsed("");
-      return;
-    }
-    const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - recordingStart) / 1000);
-      const m = Math.floor(elapsed / 60);
-      const s = elapsed % 60;
-      setRecordingElapsed(`${m}:${String(s).padStart(2, "0")}`);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [recordingStart]);
-
   // Mouse/touch handlers for pan and zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -267,119 +211,19 @@ export default function MapViewer({
     zoomRef.current = 1;
   }, []);
 
-  // Phase 3: Map operations
-  const fetchMaps = useCallback(async () => {
-    if (!robotIp) return;
-    try {
-      const res = await fetch(`/api/robot/maps?${credParams()}`);
-      const data = await res.json();
-      if (data.success) setSavedMaps(data.maps || []);
-    } catch { /* ignore */ }
-  }, [robotIp, credParams]);
-
-  const saveMap = useCallback(async (name?: string) => {
-    if (!robotIp) return;
-    setSaveStatus("Saving...");
-    try {
-      const res = await fetch("/api/robot/maps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credBody({ action: "save", name })),
-      });
-      const data = await res.json();
-      setSaveStatus(data.success ? `Saved: ${data.name}` : data.message);
-      if (data.success) fetchMaps();
-    } catch (err) {
-      setSaveStatus((err as Error).message);
-    }
-    setTimeout(() => setSaveStatus(null), 3000);
-  }, [robotIp, credBody, fetchMaps]);
-
-  const deleteMap = useCallback(async (name: string) => {
-    if (!robotIp) return;
-    try {
-      await fetch("/api/robot/maps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credBody({ action: "delete_map", name })),
-      });
-      fetchMaps();
-    } catch { /* ignore */ }
-  }, [robotIp, credBody, fetchMaps]);
-
-  // Phase 4: Rosbag operations
-  const fetchBags = useCallback(async () => {
-    if (!robotIp) return;
-    try {
-      const res = await fetch(`/api/robot/maps?${credParams()}&type=bags`);
-      const data = await res.json();
-      if (data.success) setSavedBags(data.bags || []);
-    } catch { /* ignore */ }
-  }, [robotIp, credParams]);
-
-  const startRecording = useCallback(async () => {
-    if (!robotIp) return;
-    try {
-      const res = await fetch("/api/robot/maps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credBody({ action: "start_recording" })),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setLocalRecording(true);
-        setRecordingStart(Date.now());
-      }
-    } catch { /* ignore */ }
-  }, [robotIp, credBody]);
-
-  const stopRecording = useCallback(async () => {
-    if (!robotIp) return;
-    try {
-      await fetch("/api/robot/maps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credBody({ action: "stop_recording" })),
-      });
-      setLocalRecording(false);
-      setRecordingStart(null);
-      fetchBags();
-    } catch { /* ignore */ }
-  }, [robotIp, credBody, fetchBags]);
-
-  const playBag = useCallback(async (name: string) => {
-    if (!robotIp) return;
-    try {
-      await fetch("/api/robot/maps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credBody({ action: "play_bag", name })),
-      });
-    } catch { /* ignore */ }
-  }, [robotIp, credBody]);
-
-  const stopPlayback = useCallback(async () => {
-    if (!robotIp) return;
-    try {
-      await fetch("/api/robot/maps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credBody({ action: "stop_playback" })),
-      });
-    } catch { /* ignore */ }
-  }, [robotIp, credBody]);
-
-  const deleteBag = useCallback(async (name: string) => {
-    if (!robotIp) return;
-    try {
-      await fetch("/api/robot/maps", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credBody({ action: "delete_bag", name })),
-      });
-      fetchBags();
-    } catch { /* ignore */ }
-  }, [robotIp, credBody, fetchBags]);
+  // Reset map: kill gmapping, clear local state, restart fresh
+  const resetMap = useCallback(async () => {
+    if (!onRestartComponent) return;
+    setResettingMap(true);
+    mapRef.current = null;
+    mapImageRef.current = null;
+    trailRef.current = [];
+    lastTrailPointRef.current = null;
+    autoSwitchedRef.current = false;
+    setViewMode("lidar");
+    await onRestartComponent("slam");
+    setResettingMap(false);
+  }, [onRestartComponent]);
 
   // Helper: convert world coords to screen coords (used in draw loop)
   // Defined inside draw so it captures the current transform state
@@ -414,7 +258,14 @@ export default function MapViewer({
 
     const map = mapRef.current;
     const mapImage = mapImageRef.current;
-    const pose = poseRef.current;
+    let pose = poseRef.current;
+
+    // If pose looks stale/reset (at origin) but trail has data, use last trail point
+    const trail = trailRef.current;
+    if (pose.x === 0 && pose.y === 0 && pose.theta === 0 && trail.length > 0) {
+      const last = trail[trail.length - 1];
+      pose = { x: last.x, y: last.y, theta: pose.theta };
+    }
 
     if (viewMode === "slam" && map && mapImage) {
       const { resolution, width: mw, height: mh, origin } = map.info;
@@ -526,28 +377,32 @@ export default function MapViewer({
       ctx.save();
       ctx.translate(robotScreenX, robotScreenY);
       ctx.rotate(-pose.theta);
-      const arrowLen = 18;
-      const arrowWidth = 10;
+      const arrowLen = 20;
+      const arrowWidth = 12;
+      const drawArrow = () => {
+        ctx.beginPath();
+        ctx.moveTo(arrowLen, 0);
+        ctx.lineTo(-arrowWidth, -arrowWidth);
+        ctx.lineTo(-arrowWidth * 0.3, 0);
+        ctx.lineTo(-arrowWidth, arrowWidth);
+        ctx.closePath();
+      };
+      // Shadow for depth
+      ctx.shadowColor = "rgba(0,0,0,0.3)";
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetX = 1;
+      ctx.shadowOffsetY = 1;
       // White halo outline for contrast
-      ctx.strokeStyle = "rgba(255,255,255,0.8)";
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(arrowLen, 0);
-      ctx.lineTo(-arrowWidth, -arrowWidth);
-      ctx.lineTo(-arrowWidth * 0.3, 0);
-      ctx.lineTo(-arrowWidth, arrowWidth);
-      ctx.closePath();
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 5;
+      drawArrow();
       ctx.stroke();
       // Fill and inner stroke
+      ctx.shadowColor = "transparent";
       ctx.fillStyle = ROBOT_COLOR;
-      ctx.strokeStyle = ROBOT_COLOR;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(arrowLen, 0);
-      ctx.lineTo(-arrowWidth, -arrowWidth);
-      ctx.lineTo(-arrowWidth * 0.3, 0);
-      ctx.lineTo(-arrowWidth, arrowWidth);
-      ctx.closePath();
+      ctx.strokeStyle = "rgba(100, 60, 20, 0.8)";
+      ctx.lineWidth = 1.5;
+      drawArrow();
       ctx.fill();
       ctx.stroke();
       ctx.restore();
@@ -618,14 +473,6 @@ export default function MapViewer({
         ctx.restore();
       }
 
-      // Phase 4: Playback indicator
-      if (isPlaying) {
-        ctx.save();
-        ctx.fillStyle = "rgba(218, 165, 32, 0.8)";
-        ctx.font = "bold 14px monospace";
-        ctx.fillText("▶ PLAYBACK", 10, h - 10);
-        ctx.restore();
-      }
     } else {
       // No map yet — draw scan-only view
       const scale = Math.min(w, h) / 12;
@@ -701,7 +548,7 @@ export default function MapViewer({
     // Prevent draw loop from dying on transient errors
    }
     animFrameRef.current = requestAnimationFrame(draw);
-  }, [poseRef, isPlaying, viewMode]);
+  }, [poseRef, viewMode]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(draw);
@@ -720,7 +567,6 @@ export default function MapViewer({
       <div className="bg-panel-header border-b border-panel-border uppercase tracking-widest text-xs text-panel-header-text px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span>MAP</span>
-          {/* View mode toggle */}
           <div className="flex rounded overflow-hidden border border-panel-header-text/30">
             <button
               onClick={() => setViewMode("lidar")}
@@ -744,132 +590,25 @@ export default function MapViewer({
               SLAM
             </button>
           </div>
-          {isRecording && (
-            <span className="flex items-center gap-1 text-accent-red animate-pulse normal-case tracking-normal">
-              <span className="inline-block w-2 h-2 rounded-full bg-accent-red" />
-              REC {recordingElapsed}
-            </span>
-          )}
         </div>
-        {viewMode === "slam" && (
-          <button
-            onClick={clearTrail}
-            className="text-panel-header-text/60 hover:text-panel-header-text text-xs normal-case tracking-normal transition-colors"
-            title="Clear trail"
-          >
-            Clear Trail
-          </button>
-        )}
       </div>
 
       {/* Toolbar — SLAM mode only */}
-      {connected && robotIp && viewMode === "slam" && (
+      {connected && viewMode === "slam" && (
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-panel-border bg-panel text-xs">
-          {/* Map save */}
           <button
-            onClick={() => saveMap()}
-            disabled={!slamActive}
-            className="rounded px-2 py-1 bg-input-bg border border-panel-border hover:bg-panel-border text-text-label disabled:opacity-40 transition-colors"
-            title={slamActive ? "Save current map" : "Start SLAM first"}
+            onClick={clearTrail}
+            className="rounded px-2 py-1 bg-input-bg border border-panel-border hover:bg-panel-border text-text-label transition-colors"
           >
-            Save Map
+            Reset Trail
           </button>
-
-          {/* Saved maps dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => { setShowMaps(!showMaps); if (!showMaps) fetchMaps(); }}
-              className="rounded px-2 py-1 bg-input-bg border border-panel-border hover:bg-panel-border text-text-label transition-colors"
-            >
-              Maps {savedMaps.length > 0 && `(${savedMaps.length})`}
-            </button>
-            {showMaps && (
-              <div className="absolute top-full left-0 mt-1 bg-panel border border-panel-border rounded shadow-lg z-10 min-w-[200px] max-h-48 overflow-y-auto">
-                {savedMaps.length === 0 ? (
-                  <div className="px-3 py-2 text-text-dim">No saved maps</div>
-                ) : (
-                  savedMaps.map((m) => (
-                    <div key={m.name} className="flex items-center justify-between px-3 py-1.5 hover:bg-input-bg">
-                      <span className="text-text-label truncate">{m.name}</span>
-                      <button
-                        onClick={() => deleteMap(m.name)}
-                        className="text-accent-red/60 hover:text-accent-red ml-2 shrink-0"
-                        title="Delete"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="w-px h-4 bg-panel-border mx-1" />
-
-          {/* Recording toggle */}
           <button
-            onClick={isRecording ? stopRecording : startRecording}
-            className={`rounded px-2 py-1 border transition-colors ${
-              isRecording
-                ? "bg-accent-red/20 border-accent-red/50 text-accent-red"
-                : "bg-input-bg border-panel-border hover:bg-panel-border text-text-label"
-            }`}
+            onClick={resetMap}
+            disabled={resettingMap || !slamActive}
+            className="rounded px-2 py-1 border border-accent-red/40 text-accent-red hover:bg-accent-red/10 disabled:opacity-40 transition-colors"
           >
-            {isRecording ? "⏹ Stop Rec" : "⏺ Record"}
+            {resettingMap ? "Resetting..." : "Reset Map"}
           </button>
-
-          {/* Bags dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => { setShowBags(!showBags); if (!showBags) fetchBags(); }}
-              className="rounded px-2 py-1 bg-input-bg border border-panel-border hover:bg-panel-border text-text-label transition-colors"
-            >
-              Bags {savedBags.length > 0 && `(${savedBags.length})`}
-            </button>
-            {showBags && (
-              <div className="absolute top-full left-0 mt-1 bg-panel border border-panel-border rounded shadow-lg z-10 min-w-[240px] max-h-48 overflow-y-auto">
-                {savedBags.length === 0 ? (
-                  <div className="px-3 py-2 text-text-dim">No recorded bags</div>
-                ) : (
-                  savedBags.map((b) => (
-                    <div key={b.name} className="flex items-center justify-between px-3 py-1.5 hover:bg-input-bg gap-2">
-                      <span className="text-text-label truncate flex-1">{b.name}</span>
-                      <span className="text-text-dim shrink-0">{b.size}</span>
-                      <button
-                        onClick={() => playBag(b.name)}
-                        className="text-accent-green hover:text-accent-green/80 shrink-0"
-                        title="Play"
-                      >
-                        ▶
-                      </button>
-                      <button
-                        onClick={() => deleteBag(b.name)}
-                        className="text-accent-red/60 hover:text-accent-red shrink-0"
-                        title="Delete"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-
-          {isPlaying && (
-            <button
-              onClick={stopPlayback}
-              className="rounded px-2 py-1 bg-accent-amber/20 border border-accent-amber/50 text-accent-amber transition-colors"
-            >
-              ⏹ Stop Play
-            </button>
-          )}
-
-          {/* Save status toast */}
-          {saveStatus && (
-            <span className="ml-auto text-text-dim">{saveStatus}</span>
-          )}
         </div>
       )}
 
