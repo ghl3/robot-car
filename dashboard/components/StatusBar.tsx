@@ -51,6 +51,24 @@ function UsageBar({ label, percent, detail }: { label: string; percent: number |
   );
 }
 
+function StatusChip({ label, active, color }: { label: string; active: boolean; color?: string }) {
+  const dotColor = active
+    ? (color || "bg-accent-green")
+    : "bg-accent-red animate-pulse";
+  const borderColor = active
+    ? (color ? "border-current/30" : "border-accent-green/30")
+    : "border-accent-red/30";
+  const textColor = active
+    ? (color ? "" : "text-accent-green")
+    : "text-accent-red";
+  return (
+    <div className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium border transition-colors ${borderColor} ${textColor} ${active ? "bg-current/5" : "bg-accent-red/5"}`}>
+      <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 // --- Main Component ---
 
 interface StatusBarProps {
@@ -157,14 +175,6 @@ export default function StatusBar({ rosStatus, onConnect, onDisconnect, onSystem
     userCollapsedRef.current = !next;
   };
 
-  // Status helpers
-  const smallDot = (active: boolean) => (
-    <div className={`h-2 w-2 rounded-full shrink-0 ${active
-      ? "bg-accent-green shadow-[0_0_4px_theme(--color-accent-green)]"
-      : "bg-input-bg border border-panel-border"
-    }`} />
-  );
-
   const components = systemInfo && servicesRunning ? [
     { key: "camera", label: "CAM", active: systemInfo.cameraActive },
     { key: "web_video_server", label: "VID", active: systemInfo.webVideoServerActive },
@@ -176,7 +186,8 @@ export default function StatusBar({ rosStatus, onConnect, onDisconnect, onSystem
   ] : null;
 
   const maxTemp = systemInfo ? Math.max(...Object.values(systemInfo.temps), 0) : 0;
-  const tempColor = maxTemp >= 80 ? "text-accent-red" : maxTemp >= 60 ? "text-accent-amber" : "text-text-dim";
+  const memPct = systemInfo?.memoryUsage?.percent ?? 0;
+  const pwrV = systemInfo?.powerVoltage ?? 0;
 
   return (
     <div className="bg-panel border border-panel-border rounded overflow-hidden shadow-sm">
@@ -219,49 +230,42 @@ export default function StatusBar({ rosStatus, onConnect, onDisconnect, onSystem
         {/* Separator */}
         {components && <div className="w-px h-5 bg-panel-border/50 mx-1" />}
 
-        {/* Component pills */}
+        {/* Component pills — unified chip style, click to restart if down */}
         {components?.map(c => (
-          <div key={c.key} className={`flex items-center gap-1.5 rounded-full pl-2 py-0.5 text-[11px] font-medium border transition-colors ${
-            c.active
-              ? "border-accent-green/30 text-accent-green bg-accent-green/5 pr-2"
-              : "border-accent-red/30 text-accent-red bg-accent-red/5 pr-1"
-          }`}>
-            <div className={`h-2 w-2 rounded-full shrink-0 ${c.active ? "bg-accent-green" : "bg-accent-red animate-pulse"}`} />
-            <span>{c.label}</span>
-            {!c.active && (
-              <button
-                onClick={() => handleRestartComponent(c.key)}
-                disabled={restartingKey !== null}
-                className="rounded-full bg-accent-red text-white hover:bg-accent-red-bright disabled:opacity-50 transition-colors px-1.5 py-px text-[9px] font-bold"
-              >
-                {restartingKey === c.key ? "..." : "RESTART"}
-              </button>
-            )}
-          </div>
+          <button
+            key={c.key}
+            onClick={!c.active ? () => handleRestartComponent(c.key) : undefined}
+            disabled={c.active || restartingKey !== null}
+            className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium border transition-colors ${
+              c.active
+                ? "border-accent-green/30 text-accent-green bg-accent-green/5 cursor-default"
+                : "border-accent-red/30 text-accent-red bg-accent-red/5 hover:bg-accent-red/10 cursor-pointer"
+            }`}
+          >
+            <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${c.active ? "bg-accent-green" : "bg-accent-red animate-pulse"}`} />
+            <span>{restartingKey === c.key ? "..." : c.label}</span>
+          </button>
         ))}
 
-        {/* Right-side stats */}
-        <div className="flex items-center gap-2.5 ml-auto text-[10px] text-text-dim">
-          <span className="flex items-center gap-1">{smallDot(systemInfo !== null)} SSH</span>
-          <span className="flex items-center gap-1">{smallDot(servicesRunning)} ROS</span>
-          <span className="flex items-center gap-1">{smallDot(isConnected)} WS</span>
-          {systemInfo && <span className={`font-mono ${tempColor}`}>{maxTemp.toFixed(0)}&deg;C</span>}
-          {systemInfo?.memoryUsage && <span className="font-mono">{systemInfo.memoryUsage.percent}%</span>}
-          {systemInfo && systemInfo.powerVoltage > 0 && (
-            <span className={`font-mono ${systemInfo.powerVoltage < 4800 ? "text-accent-red" : systemInfo.powerVoltage < 5000 ? "text-accent-amber" : "text-text-dim"}`}>
-              {(systemInfo.powerVoltage / 1000).toFixed(1)}V {(systemInfo.powerWatts / 1000).toFixed(1)}W
-            </span>
+        {/* Right-side connection indicators */}
+        <div className="flex items-center gap-2 ml-auto">
+          {systemInfo && (
+            <>
+              <StatusChip label="SSH" active={systemInfo !== null} />
+              <StatusChip label="ROS" active={servicesRunning} />
+              <StatusChip label="WS" active={isConnected} />
+            </>
           )}
-        </div>
 
-        {/* Expand chevron */}
-        <button onClick={toggleExpanded}
-          className="rounded p-1 text-text-dim hover:text-foreground hover:bg-input-bg transition-colors shrink-0">
-          <svg className={`w-4 h-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
-            fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+          {/* Expand chevron */}
+          <button onClick={toggleExpanded}
+            className="rounded p-1 text-text-dim hover:text-foreground hover:bg-input-bg transition-colors shrink-0">
+            <svg className={`w-4 h-4 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* === Expanded Section === */}
@@ -319,6 +323,27 @@ export default function StatusBar({ rosStatus, onConnect, onDisconnect, onSystem
                             detail={`${systemInfo.diskUsage.used}/${systemInfo.diskUsage.size}`} />
                         </div>
                       )}
+                      {pwrV > 0 && (() => {
+                        // Map 5V rail voltage to battery estimate.
+                        // The regulator maintains ~5V until the battery is nearly dead.
+                        // Voltage sags under load as battery drains:
+                        //   5.1V+ = full, 5.0V = good, 4.9V = low, <4.8V = critical
+                        const level = pwrV >= 5100 ? "FULL" : pwrV >= 5000 ? "GOOD" : pwrV >= 4900 ? "LOW" : "CRITICAL";
+                        const levelColor = pwrV >= 5000 ? "text-accent-green" : pwrV >= 4900 ? "text-accent-amber" : "text-accent-red";
+                        return (
+                          <div className="bg-input-bg border border-panel-border rounded p-2">
+                            <div className="flex justify-between text-xs mb-1">
+                              <span className="text-text-dim">Battery</span>
+                              <span className={`font-bold ${levelColor}`}>{level}</span>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-text-dim font-mono">
+                              <span>{(pwrV / 1000).toFixed(2)}V</span>
+                              <span>{(systemInfo.powerCurrent / 1000).toFixed(2)}A</span>
+                              <span>{(systemInfo.powerWatts / 1000).toFixed(1)}W</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       <div className="bg-input-bg border border-panel-border rounded p-2">
                         <div className="text-[10px] text-text-dim">Uptime</div>
                         <span className="text-xs text-foreground">{systemInfo.uptime}</span>
