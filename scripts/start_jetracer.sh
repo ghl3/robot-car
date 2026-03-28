@@ -77,13 +77,13 @@ while true; do
             rosrun gmapping slam_gmapping \
                 _base_frame:=base_footprint \
                 _odom_frame:=odom \
-                _map_update_interval:=1.0 \
+                _map_update_interval:=0.5 \
                 _maxUrange:=6.0 \
                 _maxRange:=8.0 \
                 _particles:=30 \
-                _linearUpdate:=0.1 \
-                _angularUpdate:=0.15 \
-                _temporalUpdate:=2.0 \
+                _linearUpdate:=0.05 \
+                _angularUpdate:=0.1 \
+                _temporalUpdate:=0.5 \
                 _delta:=0.03 \
                 _xmin:=-10.0 \
                 _xmax:=10.0 \
