@@ -52,15 +52,21 @@ export async function POST(request: Request) {
     // Kill existing process
     await executeCommand(ip, cmds.kill, creds);
 
-    // Start new process
-    const startResult = await executeCommand(ip, cmds.start, creds);
+    // Start new process — run without PTY so nohup'd background processes survive SSH disconnect
+    const ssh = await (await import("@/lib/ssh")).getSSHConnection(ip, creds);
+    try {
+      await ssh.execCommand(cmds.start);
+      // Brief wait for process to start
+      await new Promise(r => setTimeout(r, 1500));
+      ssh.dispose();
+    } catch {
+      ssh.dispose();
+    }
 
     return NextResponse.json({
       success: true,
       component,
       message: `${component} restarted`,
-      stdout: startResult.stdout,
-      stderr: startResult.stderr,
     });
   } catch (error) {
     return NextResponse.json(
