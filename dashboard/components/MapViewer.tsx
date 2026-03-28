@@ -286,7 +286,7 @@ export default function MapViewer({
     setNavStatus("idle");
   }, [publish]);
 
-  // Reset map: kill gmapping + scan filter, clear local state, restart fresh
+  // Reset map: kill SLAM + scan filter + nav, clear local state and saved maps, restart fresh
   const resetMap = useCallback(async () => {
     if (!onRestartComponent) return;
     setResettingMap(true);
@@ -295,10 +295,17 @@ export default function MapViewer({
     trailRef.current = [];
     lastTrailPointRef.current = null;
     autoSwitchedRef.current = false;
+    navGoalRef.current = null;
+    setNavStatus("idle");
     setViewMode("lidar");
+    const withTimeout = (p: Promise<unknown>, ms = 10000) =>
+      Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))]);
     try {
-      await onRestartComponent("slam");
-      await onRestartComponent("scan_filter");
+      await withTimeout(onRestartComponent("nav")).catch(() => {});
+      await withTimeout(onRestartComponent("slam"));
+      await withTimeout(onRestartComponent("scan_filter"));
+    } catch {
+      // timeout or error -- still clear the resetting state
     } finally {
       setResettingMap(false);
     }

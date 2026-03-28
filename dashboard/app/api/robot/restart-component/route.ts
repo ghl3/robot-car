@@ -25,7 +25,7 @@ const COMPONENT_COMMANDS: Record<string, { kill: string; start: string }> = {
     start: `${ROS_ENV} && rosparam load /tmp/laser_filter.yaml /scan_to_scan_filter_chain && nohup rosrun laser_filters scan_to_scan_filter_chain scan:=scan scan_filtered:=scan_filtered > /tmp/restart_scan_filter.log 2>&1 &`,
   },
   slam: {
-    kill: "pkill -f slam_toolbox 2>/dev/null; sleep 1; pkill -9 -f slam_toolbox 2>/dev/null",
+    kill: "pkill -f slam_toolbox 2>/dev/null; sleep 1; pkill -9 -f slam_toolbox 2>/dev/null; rm -f ~/maps/slam_latest.posegraph ~/maps/slam_latest.data",
     start: `${ROS_ENV} && rosparam load /tmp/slam_toolbox_params.yaml /slam_toolbox && nohup rosrun slam_toolbox async_slam_toolbox_node scan:=scan_filtered > /tmp/restart_slam.log 2>&1 &`,
   },
   nav: {
