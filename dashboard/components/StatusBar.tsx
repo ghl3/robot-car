@@ -61,6 +61,7 @@ interface StatusBarProps {
     lidarDetected: boolean; lidarActive: boolean; slamActive: boolean;
     recordingActive: boolean; playbackActive: boolean;
     cameraActive: boolean; webVideoServerActive: boolean;
+    detectnetActive: boolean; depthnetActive: boolean;
   } | null) => void;
   onRestartRef?: React.MutableRefObject<((component: string) => Promise<unknown>) | undefined>;
 }
@@ -110,6 +111,7 @@ export default function StatusBar({ rosStatus, onConnect, onDisconnect, onSystem
       slamActive: systemInfo.slamActive, recordingActive: systemInfo.recordingActive,
       playbackActive: systemInfo.playbackActive, cameraActive: systemInfo.cameraActive,
       webVideoServerActive: systemInfo.webVideoServerActive,
+      detectnetActive: systemInfo.detectnetActive, depthnetActive: systemInfo.depthnetActive,
     } : null);
   }, [systemInfo, onSystemInfo]);
 
@@ -164,6 +166,7 @@ export default function StatusBar({ rosStatus, onConnect, onDisconnect, onSystem
     { key: "web_video_server", label: "VID", active: systemInfo.webVideoServerActive },
     { key: "lidar", label: "LIDAR", active: systemInfo.lidarActive },
     { key: "slam", label: "SLAM", active: systemInfo.slamActive },
+    { key: "detectnet", label: "DET", active: systemInfo.detectnetActive },
     { key: "jetracer", label: "JETRACER", active: true },
   ] : null;
 

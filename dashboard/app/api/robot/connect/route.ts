@@ -15,6 +15,8 @@ const REQUIRED_PKGS = [
   "ros-melodic-slam-toolbox",
   "ros-melodic-map-server",
   "ros-melodic-laser-filters",
+  "ros-melodic-vision-msgs",
+  "ros-melodic-image-transport",
 ];
 
 function getStartScript(): string {
@@ -191,6 +193,24 @@ export async function POST(request: Request) {
         await ssh.execCommand(
           `cat > /tmp/slam_toolbox_params.yaml << 'YAML_EOF'\n${getSlamToolboxConfig()}\nYAML_EOF`
         );
+
+        // Build ros_deep_learning if not already installed (one-time setup)
+        const rosEnv = "source /opt/ros/melodic/setup.bash && source ~/catkin_ws/devel/setup.bash";
+        const rdlCheck = await ssh.execCommand(
+          `${rosEnv} && rospack find ros_deep_learning 2>/dev/null`
+        );
+        if (rdlCheck.code !== 0) {
+          log("Building ros_deep_learning (one-time setup)...");
+          const buildResult = await ssh.execCommand(
+            `${rosEnv} && cd ~/catkin_ws/src && [ ! -d ros_deep_learning ] && git clone https://github.com/dusty-nv/ros_deep_learning.git; cd ~/catkin_ws && catkin_make -DCATKIN_WHITELIST_PACKAGES=ros_deep_learning 2>&1 | tail -5`,
+            { execOptions: { pty: true } }
+          );
+          if (buildResult.code === 0) {
+            log("ros_deep_learning built successfully.");
+          } else {
+            log("Warning: ros_deep_learning build failed. Detection/depth features will be unavailable.");
+          }
+        }
 
         // Launch services (no PTY — PTY would kill the process when SSH disconnects)
         log("Launching JetRacer services...");

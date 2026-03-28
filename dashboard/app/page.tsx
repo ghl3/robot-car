@@ -16,6 +16,8 @@ interface SystemInfo {
   playbackActive: boolean;
   cameraActive: boolean;
   webVideoServerActive: boolean;
+  detectnetActive: boolean;
+  depthnetActive: boolean;
 }
 
 export default function Home() {
@@ -55,6 +57,8 @@ export default function Home() {
             connected={connected}
             cameraActive={systemInfo?.cameraActive}
             webVideoServerActive={systemInfo?.webVideoServerActive}
+            detectnetActive={systemInfo?.detectnetActive}
+            depthnetActive={systemInfo?.depthnetActive}
           />
           <MapViewer
             status={status}

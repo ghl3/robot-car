@@ -99,6 +99,20 @@ while true; do
         echo "Camera restarted (PID $CAMERA_PID)"
     fi
 
+    # Vision watchdog: detectnet (requires camera + ros_deep_learning)
+    # ros_deep_learning nodes use hardcoded /detectnet/image_in topic names,
+    # so we relay the camera topic to the expected input.
+    if kill -0 $CAMERA_PID 2>/dev/null && rospack find ros_deep_learning >/dev/null 2>&1; then
+        if [ -z "$DETECTNET_PID" ] || ! kill -0 $DETECTNET_PID 2>/dev/null; then
+            rosrun topic_tools relay /csi_cam_0/image_raw /detectnet/image_in &
+            DETECT_RELAY_PID=$!
+            rosrun ros_deep_learning detectnet \
+                _model_name:=ssd-mobilenet-v2 &
+            DETECTNET_PID=$!
+            echo "detectnet started (PID $DETECTNET_PID, relay PID $DETECT_RELAY_PID)"
+        fi
+    fi
+
     # Web video server watchdog
     if ! kill -0 $WEB_SERVER_PID 2>/dev/null; then
         echo "web_video_server died, restarting..."

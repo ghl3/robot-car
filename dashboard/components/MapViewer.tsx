@@ -6,6 +6,7 @@ import { useTopicRef, type TopicOptions } from "@/hooks/useTopicRef";
 import { usePose } from "@/hooks/usePose";
 import type { Ros } from "roslib";
 import type { RosStatus } from "@/hooks/useRobot";
+import TabBar from "./TabBar";
 
 interface LaserScan {
   angle_min: number;
@@ -571,29 +572,14 @@ export default function MapViewer({
       <div className="bg-panel-header border-b border-panel-border uppercase tracking-widest text-xs text-panel-header-text px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span>MAP</span>
-          <div className="flex rounded overflow-hidden border border-panel-header-text/30">
-            <button
-              onClick={() => setViewMode("lidar")}
-              className={`px-2 py-0.5 text-[10px] font-bold tracking-wider transition-colors ${
-                viewMode === "lidar"
-                  ? "bg-panel-header-text/20 text-panel-header-text"
-                  : "text-panel-header-text/50 hover:text-panel-header-text/80"
-              }`}
-            >
-              LIDAR
-            </button>
-            <button
-              onClick={() => { if (mapRef.current) setViewMode("slam"); }}
-              disabled={!mapRef.current}
-              className={`px-2 py-0.5 text-[10px] font-bold tracking-wider transition-colors ${
-                viewMode === "slam"
-                  ? "bg-panel-header-text/20 text-panel-header-text"
-                  : "text-panel-header-text/50 hover:text-panel-header-text/80 disabled:opacity-30 disabled:cursor-not-allowed"
-              }`}
-            >
-              SLAM
-            </button>
-          </div>
+          <TabBar
+            tabs={[
+              { key: "lidar", label: "LIDAR" },
+              { key: "slam", label: "SLAM", disabled: !mapRef.current },
+            ]}
+            activeKey={viewMode}
+            onSelect={(k) => { if (k === "slam" && !mapRef.current) return; setViewMode(k as "lidar" | "slam"); }}
+          />
         </div>
       </div>
 

@@ -8,6 +8,7 @@
 #   2. Configures passwordless sudo for the jetson user
 #   3. Installs required ROS packages
 #   4. Verifies the catkin workspace and ROS environment
+#   5. Builds jetson-inference and ros_deep_learning (vision/detection)
 #
 # After this, the dashboard's "Power On" button will work without any manual steps.
 #
@@ -29,7 +30,7 @@ ok()      { echo -e "  ${GREEN}✓${RESET} $1"; }
 skip()    { echo -e "  ${DIM}– $1${RESET}"; }
 warn()    { echo -e "  ${YELLOW}! $1${RESET}"; }
 fail()    { echo -e "  ${RED}✗ $1${RESET}"; }
-step()    { echo -e "\n${BOLD}[$1/4] $2${RESET}"; }
+step()    { echo -e "\n${BOLD}[$1/5] $2${RESET}"; }
 
 ERRORS=0
 
@@ -81,6 +82,8 @@ step 3 "ROS packages"
 PACKAGES=(
     ros-melodic-rosbridge-suite
     ros-melodic-web-video-server
+    ros-melodic-vision-msgs
+    ros-melodic-image-transport
 )
 
 MISSING=()
@@ -126,6 +129,45 @@ if $SSH "source /opt/ros/melodic/setup.bash && source ~/catkin_ws/devel/setup.ba
     ok "jetracer package"
 else
     warn "jetracer ROS package not found in catkin workspace"
+fi
+
+# --- Step 5: Vision (jetson-inference + ros_deep_learning) ---
+step 5 "Vision libraries (jetson-inference + ros_deep_learning)"
+
+# Check if jetson-inference is already installed
+if $SSH "python3 -c 'import jetson_inference' 2>/dev/null"; then
+    skip "jetson-inference already installed"
+else
+    echo -e "  Building jetson-inference from source ${DIM}(this takes 10-20 minutes)${RESET}"
+    if $SSH "cd ~ && \
+        [ ! -d jetson-inference ] && git clone --recursive --depth=1 https://github.com/dusty-nv/jetson-inference.git; \
+        NPYMATH_DIR=\$(python3 -c 'import numpy; print(numpy.get_include() + \"/../lib\")') && \
+        sudo ln -sf \$NPYMATH_DIR/libnpymath.a /usr/local/lib/libnpymath.a && \
+        cd jetson-inference && mkdir -p build && cd build && \
+        cmake .. -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -3 && \
+        make -j3 2>&1 | tail -5 && \
+        sudo make install 2>&1 | tail -3 && \
+        sudo ldconfig" 2>&1 | while read -r line; do echo -e "  ${DIM}${line}${RESET}"; done; then
+        ok "jetson-inference built and installed"
+    else
+        fail "jetson-inference build failed"
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+
+# Check if ros_deep_learning is already built
+if $SSH "source /opt/ros/melodic/setup.bash && source ~/catkin_ws/devel/setup.bash 2>/dev/null && rospack find ros_deep_learning" >/dev/null 2>&1; then
+    skip "ros_deep_learning already built"
+else
+    echo -e "  Building ros_deep_learning in catkin workspace..."
+    if $SSH "source /opt/ros/melodic/setup.bash && source ~/catkin_ws/devel/setup.bash 2>/dev/null; \
+        cd ~/catkin_ws/src && [ ! -d ros_deep_learning ] && git clone https://github.com/dusty-nv/ros_deep_learning.git; \
+        cd ~/catkin_ws && catkin_make 2>&1 | tail -5" 2>&1 | while read -r line; do echo -e "  ${DIM}${line}${RESET}"; done; then
+        ok "ros_deep_learning built"
+    else
+        fail "ros_deep_learning build failed"
+        ERRORS=$((ERRORS + 1))
+    fi
 fi
 
 # --- System info ---
