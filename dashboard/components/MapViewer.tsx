@@ -82,6 +82,7 @@ export default function MapViewer({
   const [viewMode, setViewMode] = useState<"lidar" | "slam">("lidar");
   const autoSwitchedRef = useRef(false);
   const [resettingMap, setResettingMap] = useState(false);
+  const suppressMapUntilRef = useRef(0);  // epoch ms -- ignore /map messages until this time
 
   // Navigation goal
   const navGoalRef = useRef<{ x: number; y: number } | null>(null);
@@ -123,6 +124,9 @@ export default function MapViewer({
 
   // Rebuild offscreen canvas when a new /map message arrives
   const rebuildMapImage = useCallback((grid: OccupancyGrid) => {
+    // Ignore stale latched /map messages during reset
+    if (Date.now() < suppressMapUntilRef.current) return;
+
     mapRef.current = grid;
     const { width, height } = grid.info;
     if (width <= 0 || height <= 0 || width > 4096 || height > 4096) return;
@@ -290,6 +294,8 @@ export default function MapViewer({
   const resetMap = useCallback(async () => {
     if (!onRestartComponent) return;
     setResettingMap(true);
+    // Suppress stale latched /map messages for 8 seconds while SLAM restarts
+    suppressMapUntilRef.current = Date.now() + 8000;
     mapRef.current = null;
     mapImageRef.current = null;
     trailRef.current = [];
