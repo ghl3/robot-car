@@ -91,6 +91,22 @@ while true; do
         fi
     fi
 
+    # Navigation watchdog: move_base (requires SLAM + nav configs)
+    if [ -n "$SLAM_PID" ] && kill -0 $SLAM_PID 2>/dev/null && [ -f /tmp/nav/nav_move_base.yaml ]; then
+        if [ -z "$NAV_PID" ] || ! kill -0 $NAV_PID 2>/dev/null; then
+            # Load nav params before starting move_base
+            rosparam load /tmp/nav/nav_move_base.yaml /move_base
+            rosparam load /tmp/nav/nav_costmap_common.yaml /move_base/global_costmap
+            rosparam load /tmp/nav/nav_costmap_common.yaml /move_base/local_costmap
+            rosparam load /tmp/nav/nav_local_costmap.yaml /move_base
+            rosparam load /tmp/nav/nav_global_costmap.yaml /move_base
+            rosparam load /tmp/nav/nav_teb_planner.yaml /move_base
+            rosrun move_base move_base &
+            NAV_PID=$!
+            echo "move_base started (PID $NAV_PID)"
+        fi
+    fi
+
     # Camera watchdog
     if ! kill -0 $CAMERA_PID 2>/dev/null; then
         echo "Camera (gscam) died, restarting..."

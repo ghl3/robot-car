@@ -1,0 +1,23 @@
+# Shared costmap parameters for both local and global costmaps.
+# Robot footprint and sensor sources.
+
+# JetRacer footprint: 20cm x 16cm rectangle centered on base_footprint
+# (from Waveshare jetracer_ros costmap config)
+footprint: [[-0.10, -0.08], [-0.10, 0.08], [0.10, 0.08], [0.10, -0.08]]
+
+obstacle_range: 3.0
+raytrace_range: 5.0
+transform_tolerance: 0.5
+
+observation_sources: scan
+scan:
+  sensor_frame: laser_frame
+  data_type: LaserScan
+  topic: /scan_filtered
+  marking: true
+  clearing: true
+  expected_update_rate: 0.0
+
+inflation_layer:
+  inflation_radius: 0.30
+  cost_scaling_factor: 5.0

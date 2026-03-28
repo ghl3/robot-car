@@ -28,6 +28,10 @@ const COMPONENT_COMMANDS: Record<string, { kill: string; start: string }> = {
     kill: "pkill -f slam_toolbox 2>/dev/null; sleep 1; pkill -9 -f slam_toolbox 2>/dev/null",
     start: `${ROS_ENV} && rosparam load /tmp/slam_toolbox_params.yaml /slam_toolbox && nohup rosrun slam_toolbox async_slam_toolbox_node scan:=scan_filtered > /tmp/restart_slam.log 2>&1 &`,
   },
+  nav: {
+    kill: "pkill -f 'move_base' 2>/dev/null; sleep 1; pkill -9 -f 'move_base' 2>/dev/null",
+    start: `${ROS_ENV} && rosparam load /tmp/nav/nav_move_base.yaml /move_base && rosparam load /tmp/nav/nav_costmap_common.yaml /move_base/global_costmap && rosparam load /tmp/nav/nav_costmap_common.yaml /move_base/local_costmap && rosparam load /tmp/nav/nav_local_costmap.yaml /move_base && rosparam load /tmp/nav/nav_global_costmap.yaml /move_base && rosparam load /tmp/nav/nav_teb_planner.yaml /move_base && nohup rosrun move_base move_base > /tmp/restart_nav.log 2>&1 &`,
+  },
   detectnet: {
     kill: "pkill -f 'ros_deep_learning/detectnet' 2>/dev/null; pkill -f 'relay./csi_cam_0/image_raw./detectnet' 2>/dev/null; sleep 1; pkill -9 -f 'ros_deep_learning/detectnet' 2>/dev/null",
     start: `${ROS_ENV} && nohup rosrun topic_tools relay /csi_cam_0/image_raw /detectnet/image_in > /dev/null 2>&1 & nohup rosrun ros_deep_learning detectnet _model_name:=ssd-mobilenet-v2 > /tmp/restart_detectnet.log 2>&1 &`,

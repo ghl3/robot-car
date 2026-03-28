@@ -42,16 +42,18 @@ const GRID_COLOR = "rgba(180, 150, 80, 0.12)";
 interface MapViewerProps {
   status: RosStatus;
   getRos: () => Ros | null;
+  publish?: (topicName: string, messageType: string, data: Record<string, unknown>) => void;
   lidarDetected?: boolean;
   lidarActive?: boolean;
   slamActive?: boolean;
+  navActive?: boolean;
   robotIp?: string;
   credentials?: { username: string; password: string };
   onRestartComponent?: (component: string) => Promise<unknown>;
 }
 
 export default function MapViewer({
-  status, getRos, lidarDetected, lidarActive, slamActive,
+  status, getRos, publish, lidarDetected, lidarActive, slamActive, navActive,
   robotIp, credentials, onRestartComponent,
 }: MapViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -80,6 +82,17 @@ export default function MapViewer({
   const autoSwitchedRef = useRef(false);
   const [resettingMap, setResettingMap] = useState(false);
 
+  // Navigation goal
+  const navGoalRef = useRef<{ x: number; y: number } | null>(null);
+  const [navStatus, setNavStatus] = useState<"idle" | "active" | "succeeded" | "aborted">("idle");
+  const [contextMenu, setContextMenu] = useState<{ screenX: number; screenY: number; worldX: number; worldY: number } | null>(null);
+
+  // Store transform params from draw loop so right-click can compute world coords
+  const transformRef = useRef<{
+    mapScreenX: number; mapScreenY: number; pxPerCell: number;
+    originX: number; originY: number; resolution: number; mapHeight: number;
+  } | null>(null);
+
   const connected = status === "connected";
 
   // Subscribe to /scan via useTopic (small, fast messages)
@@ -88,6 +101,24 @@ export default function MapViewer({
   useEffect(() => {
     if (scanMessage) scanRef.current = scanMessage as unknown as LaserScan;
   }, [scanMessage]);
+
+  // Subscribe to move_base status for navigation feedback
+  const navStatusMsg = useTopic("/move_base/status", "actionlib_msgs/GoalStatusArray", getRos, connected && navActive === true);
+  useEffect(() => {
+    if (!navStatusMsg || !navGoalRef.current) return;
+    const statuses = (navStatusMsg as unknown as { status_list: Array<{ status: number }> }).status_list;
+    if (!statuses || statuses.length === 0) return;
+    const latest = statuses[statuses.length - 1].status;
+    if (latest === 3) { // SUCCEEDED
+      setNavStatus("succeeded");
+      navGoalRef.current = null;
+      setTimeout(() => setNavStatus("idle"), 2000);
+    } else if (latest === 4 || latest === 5) { // ABORTED or REJECTED
+      setNavStatus("aborted");
+      navGoalRef.current = null;
+      setTimeout(() => setNavStatus("idle"), 3000);
+    }
+  }, [navStatusMsg]);
 
   // Rebuild offscreen canvas when a new /map message arrives
   const rebuildMapImage = useCallback((grid: OccupancyGrid) => {
@@ -183,6 +214,7 @@ export default function MapViewer({
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setContextMenu(null);
     dragRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -211,6 +243,47 @@ export default function MapViewer({
     panRef.current = { x: 0, y: 0 };
     zoomRef.current = 1;
   }, []);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    if (viewMode !== "slam" || !transformRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const t = transformRef.current;
+    const col = (sx - t.mapScreenX) / t.pxPerCell;
+    const row = (sy - t.mapScreenY) / t.pxPerCell;
+    const worldX = col * t.resolution + t.originX;
+    const worldY = (t.mapHeight - row) * t.resolution + t.originY;
+    setContextMenu({ screenX: e.clientX, screenY: e.clientY, worldX, worldY });
+  }, [viewMode]);
+
+  const sendNavGoal = useCallback((worldX: number, worldY: number) => {
+    if (!publish) return;
+    navGoalRef.current = { x: worldX, y: worldY };
+    setNavStatus("active");
+    const pose = poseRef.current;
+    const dx = worldX - (pose?.x ?? 0);
+    const dy = worldY - (pose?.y ?? 0);
+    const yaw = Math.atan2(dy, dx);
+    publish("/move_base_simple/goal", "geometry_msgs/PoseStamped", {
+      header: { frame_id: "map" },
+      pose: {
+        position: { x: worldX, y: worldY, z: 0 },
+        orientation: { x: 0, y: 0, z: Math.sin(yaw / 2), w: Math.cos(yaw / 2) },
+      },
+    });
+    setContextMenu(null);
+  }, [publish, poseRef]);
+
+  const cancelNavGoal = useCallback(() => {
+    if (!publish) return;
+    publish("/move_base/cancel", "actionlib_msgs/GoalID", {});
+    navGoalRef.current = null;
+    setNavStatus("idle");
+  }, [publish]);
 
   // Reset map: kill gmapping + scan filter, clear local state, restart fresh
   const resetMap = useCallback(async () => {
@@ -300,6 +373,13 @@ export default function MapViewer({
       // Map image origin on screen
       const mapScreenX = robotScreenX - robotMapCol * pxPerCell;
       const mapScreenY = robotScreenY - robotMapRow * pxPerCell;
+
+      // Store transform for right-click coordinate conversion
+      transformRef.current = {
+        mapScreenX, mapScreenY, pxPerCell,
+        originX: origin.position.x, originY: origin.position.y,
+        resolution, mapHeight: mh,
+      };
 
       // World-to-screen conversion helper
       const worldToScreen = (wx: number, wy: number) => {
@@ -411,6 +491,23 @@ export default function MapViewer({
       ctx.fill();
       ctx.stroke();
       ctx.restore();
+
+      // Navigation goal marker — red crosshair at target
+      const goal = navGoalRef.current;
+      if (goal) {
+        const gp = worldToScreen(goal.x, goal.y);
+        ctx.save();
+        ctx.strokeStyle = "#e63946";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(gp.sx, gp.sy, 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(gp.sx - 14, gp.sy); ctx.lineTo(gp.sx + 14, gp.sy);
+        ctx.moveTo(gp.sx, gp.sy - 14); ctx.lineTo(gp.sx, gp.sy + 14);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // Map metadata overlay
       {
@@ -613,7 +710,40 @@ export default function MapViewer({
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onDoubleClick={handleDoubleClick}
+          onContextMenu={handleContextMenu}
         />
+
+        {/* Navigation context menu */}
+        {contextMenu && (
+          <div
+            className="fixed z-50 bg-panel border border-panel-border rounded shadow-lg py-1"
+            style={{ left: contextMenu.screenX, top: contextMenu.screenY }}
+          >
+            <button
+              onClick={() => sendNavGoal(contextMenu.worldX, contextMenu.worldY)}
+              disabled={!navActive}
+              className="block w-full text-left px-4 py-1.5 text-xs uppercase tracking-wider hover:bg-accent-red/10 text-foreground disabled:opacity-40"
+            >
+              Navigate here
+            </button>
+            <button
+              onClick={() => setContextMenu(null)}
+              className="block w-full text-left px-4 py-1.5 text-xs uppercase tracking-wider hover:bg-panel-border text-text-dim"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* Cancel navigation button */}
+        {navStatus === "active" && (
+          <button
+            onClick={cancelNavGoal}
+            className="absolute top-2 right-2 z-10 rounded px-2 py-1 text-xs bg-accent-red text-white hover:bg-accent-red/80 transition-colors"
+          >
+            Cancel Nav
+          </button>
+        )}
         {(() => {
           if (!connected) {
             return (

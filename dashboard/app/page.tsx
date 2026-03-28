@@ -18,6 +18,7 @@ interface SystemInfo {
   webVideoServerActive: boolean;
   detectnetActive: boolean;
   depthnetActive: boolean;
+  navActive: boolean;
 }
 
 export default function Home() {
@@ -62,9 +63,11 @@ export default function Home() {
           <MapViewer
             status={status}
             getRos={getRos}
+            publish={publish}
             lidarDetected={systemInfo?.lidarDetected}
             lidarActive={systemInfo?.lidarActive}
             slamActive={systemInfo?.slamActive}
+            navActive={systemInfo?.navActive}
             robotIp={ip || undefined}
             credentials={credentials}
             onRestartComponent={async (c) => { await restartComponentRef.current?.(c); }}

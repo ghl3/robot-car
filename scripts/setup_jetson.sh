@@ -84,6 +84,8 @@ PACKAGES=(
     ros-melodic-web-video-server
     ros-melodic-vision-msgs
     ros-melodic-image-transport
+    ros-melodic-navigation
+    ros-melodic-teb-local-planner
 )
 
 MISSING=()

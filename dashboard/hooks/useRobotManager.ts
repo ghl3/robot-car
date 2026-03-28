@@ -17,6 +17,7 @@ interface SystemInfo {
   webVideoServerActive: boolean;
   detectnetActive: boolean;
   depthnetActive: boolean;
+  navActive: boolean;
 }
 
 interface WifiNetwork {
@@ -117,6 +118,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
           webVideoServerActive: data.webVideoServerActive ?? false,
           detectnetActive: data.detectnetActive ?? false,
           depthnetActive: data.depthnetActive ?? false,
+          navActive: data.navActive ?? false,
         });
         setServicesRunning(data.rosRunning);
         setError(null);
