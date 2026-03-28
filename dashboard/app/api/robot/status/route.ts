@@ -33,7 +33,7 @@ export async function GET(request: Request) {
         ssh.execCommand("pgrep -f rplidarNode"),
         // Batch process checks into one command to stay under channel limit
         // Use [r]osbag trick so grep/pgrep doesn't match itself
-        ssh.execCommand("slam=$(pgrep -c -f '[s]lam_toolbox' 2>/dev/null || echo 0); rec=$(pgrep -c -f '[r]osbag record' 2>/dev/null || echo 0); play=$(pgrep -c -f '[r]osbag play' 2>/dev/null || echo 0); cam=$(pgrep -c -f '[g]scam' 2>/dev/null || echo 0); wvs=$(pgrep -c -f '[w]eb_video_server' 2>/dev/null || echo 0); det=$(pgrep -c -f '[d]etectnet' 2>/dev/null || echo 0); nav=$(pgrep -c -f '[m]ove_base' 2>/dev/null || echo 0); map_save=$(stat -c %Y $HOME/maps/slam_latest.posegraph 2>/dev/null || echo 0); echo slam=$slam rec=$rec play=$play cam=$cam wvs=$wvs det=$det nav=$nav map_save=$map_save"),
+        ssh.execCommand("slam=$(pgrep -c -f '[s]lam_toolbox' 2>/dev/null || echo 0); rec=$(pgrep -c -f '[r]osbag record' 2>/dev/null || echo 0); play=$(pgrep -c -f '[r]osbag play' 2>/dev/null || echo 0); cam=$(pgrep -c -f '[g]scam' 2>/dev/null || echo 0); wvs=$(pgrep -c -f '[w]eb_video_server' 2>/dev/null || echo 0); det=$(pgrep -c -f '[d]etectnet' 2>/dev/null || echo 0); nav=$(pgrep -c -f '[m]ove_base' 2>/dev/null || echo 0); map_save=$(stat -c %Y $HOME/maps/slam_latest.posegraph 2>/dev/null || echo 0); pwr_v=$(sudo cat /sys/bus/i2c/drivers/ina3221x/6-0040/iio:device0/in_voltage0_input 2>/dev/null || echo 0); pwr_ma=$(sudo cat /sys/bus/i2c/drivers/ina3221x/6-0040/iio:device0/in_current0_input 2>/dev/null || echo 0); pwr_mw=$(sudo cat /sys/bus/i2c/drivers/ina3221x/6-0040/iio:device0/in_power0_input 2>/dev/null || echo 0); echo slam=$slam rec=$rec play=$play cam=$cam wvs=$wvs det=$det nav=$nav map_save=$map_save pwr_v=$pwr_v pwr_ma=$pwr_ma pwr_mw=$pwr_mw"),
       ]);
 
     // Parse batched process checks
@@ -47,6 +47,9 @@ export async function GET(request: Request) {
     const depthnetActive = false;
     const navActive = /nav=([1-9])/.test(pcStr);
     const lastMapSave = parseInt((pcStr.match(/map_save=(\d+)/) || [, "0"])[1]!, 10);
+    const powerVoltage = parseInt((pcStr.match(/pwr_v=(\d+)/) || [, "0"])[1]!, 10);
+    const powerCurrent = parseInt((pcStr.match(/pwr_ma=(\d+)/) || [, "0"])[1]!, 10);
+    const powerWatts = parseInt((pcStr.match(/pwr_mw=(\d+)/) || [, "0"])[1]!, 10);
 
     ssh.dispose();
 
@@ -97,6 +100,9 @@ export async function GET(request: Request) {
       depthnetActive,
       navActive,
       lastMapSave,
+      powerVoltage,
+      powerCurrent,
+      powerWatts,
     });
   } catch (error) {
     if (ssh) ssh.dispose();

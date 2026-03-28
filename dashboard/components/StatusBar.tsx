@@ -247,6 +247,11 @@ export default function StatusBar({ rosStatus, onConnect, onDisconnect, onSystem
           <span className="flex items-center gap-1">{smallDot(isConnected)} WS</span>
           {systemInfo && <span className={`font-mono ${tempColor}`}>{maxTemp.toFixed(0)}&deg;C</span>}
           {systemInfo?.memoryUsage && <span className="font-mono">{systemInfo.memoryUsage.percent}%</span>}
+          {systemInfo && systemInfo.powerVoltage > 0 && (
+            <span className={`font-mono ${systemInfo.powerVoltage < 4800 ? "text-accent-red" : systemInfo.powerVoltage < 5000 ? "text-accent-amber" : "text-text-dim"}`}>
+              {(systemInfo.powerVoltage / 1000).toFixed(1)}V {(systemInfo.powerWatts / 1000).toFixed(1)}W
+            </span>
+          )}
         </div>
 
         {/* Expand chevron */}

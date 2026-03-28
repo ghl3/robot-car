@@ -19,6 +19,9 @@ interface SystemInfo {
   depthnetActive: boolean;
   navActive: boolean;
   lastMapSave: number;
+  powerVoltage: number;
+  powerCurrent: number;
+  powerWatts: number;
 }
 
 interface WifiNetwork {
@@ -121,6 +124,9 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
           depthnetActive: data.depthnetActive ?? false,
           navActive: data.navActive ?? false,
           lastMapSave: data.lastMapSave ?? 0,
+          powerVoltage: data.powerVoltage ?? 0,
+          powerCurrent: data.powerCurrent ?? 0,
+          powerWatts: data.powerWatts ?? 0,
         });
         setServicesRunning(data.rosRunning);
         setError(null);
