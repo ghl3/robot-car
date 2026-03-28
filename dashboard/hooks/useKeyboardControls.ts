@@ -15,11 +15,17 @@ const KEY_MAP: Record<string, string> = {
   " ": "stop",
 };
 
-export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed = 0.5, turnRate = 0.6, turnSpeed = 0.35) {
+export function useKeyboardControls(
+  publish: PublishFn,
+  status: RosStatus,
+  speed = 0.5,
+  turnRate = 0.6,
+  turnSpeed = 0.35,
+  velocityRef?: React.MutableRefObject<{ linear: number; steering: number }>,
+) {
   const activeKeys = useRef(new Set<string>());
   const [activeKeysState, setActiveKeysState] = useState<Set<string>>(new Set());
-  const lastPublish = useRef(0);
-  const publishTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const publishIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const syncActiveKeys = useCallback(() => {
     setActiveKeysState(new Set(activeKeys.current));
@@ -35,47 +41,42 @@ export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed
     [publish]
   );
 
-  const computeAndSend = useCallback(() => {
+  const computeVelocity = useCallback(() => {
     const keys = activeKeys.current;
     let linearX = 0;
     let sa = 0;
-
     if (keys.has("forward")) linearX = speed;
     else if (keys.has("backward")) linearX = -speed;
+    if (keys.has("left")) { sa = turnRate; if (linearX === 0) linearX = turnSpeed; }
+    else if (keys.has("right")) { sa = -turnRate; if (linearX === 0) linearX = turnSpeed; }
+    return { linearX, sa };
+  }, [speed, turnRate, turnSpeed]);
 
-    if (keys.has("left")) {
-      sa = turnRate;
-      if (linearX === 0) linearX = turnSpeed;
-    } else if (keys.has("right")) {
-      sa = -turnRate;
-      if (linearX === 0) linearX = turnSpeed;
-    }
-
-    const now = Date.now();
-    if (now - lastPublish.current >= 100) {
-      lastPublish.current = now;
+  const startPublishing = useCallback(() => {
+    if (publishIntervalRef.current) return;
+    const { linearX, sa } = computeVelocity();
+    if (velocityRef) velocityRef.current = { linear: linearX, steering: sa };
+    sendCommand(linearX, sa);
+    publishIntervalRef.current = setInterval(() => {
+      const { linearX, sa } = computeVelocity();
+      if (velocityRef) velocityRef.current = { linear: linearX, steering: sa };
       sendCommand(linearX, sa);
-    } else if (!publishTimer.current) {
-      publishTimer.current = setTimeout(() => {
-        publishTimer.current = null;
-        lastPublish.current = Date.now();
-        // Recompute from current active keys
-        const k = activeKeys.current;
-        let lx = 0, sa = 0;
-        if (k.has("forward")) lx = speed;
-        else if (k.has("backward")) lx = -speed;
-        if (k.has("left")) { sa = turnRate; if (lx === 0) lx = turnSpeed; }
-        else if (k.has("right")) { sa = -turnRate; if (lx === 0) lx = turnSpeed; }
-        sendCommand(lx, sa);
-      }, 100 - (now - lastPublish.current));
+    }, 100);
+  }, [computeVelocity, sendCommand, velocityRef]);
+
+  const stopPublishing = useCallback(() => {
+    if (publishIntervalRef.current) {
+      clearInterval(publishIntervalRef.current);
+      publishIntervalRef.current = null;
     }
-  }, [speed, turnRate, turnSpeed, sendCommand]);
+    if (velocityRef) velocityRef.current = { linear: 0, steering: 0 };
+    sendCommand(0, 0);
+  }, [sendCommand, velocityRef]);
 
   useEffect(() => {
     if (status !== "connected") return;
 
     const onKeyDown = (e: KeyboardEvent) => {
-      // Skip when typing in inputs
       if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
 
       const action = KEY_MAP[e.key.toLowerCase()];
@@ -85,14 +86,21 @@ export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed
       if (action === "stop") {
         activeKeys.current.clear();
         syncActiveKeys();
-        sendCommand(0, 0);
+        stopPublishing();
         return;
       }
 
       if (!activeKeys.current.has(action)) {
         activeKeys.current.add(action);
         syncActiveKeys();
-        computeAndSend();
+        // Update velocity and start continuous publishing
+        if (!publishIntervalRef.current) {
+          startPublishing();
+        } else {
+          // Already publishing — just update the velocity on next tick
+          const { linearX, sa } = computeVelocity();
+          if (velocityRef) velocityRef.current = { linear: linearX, steering: sa };
+        }
       }
     };
 
@@ -103,7 +111,13 @@ export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed
 
       activeKeys.current.delete(action);
       syncActiveKeys();
-      computeAndSend();
+
+      if (activeKeys.current.size === 0) {
+        stopPublishing();
+      } else {
+        const { linearX, sa } = computeVelocity();
+        if (velocityRef) velocityRef.current = { linear: linearX, steering: sa };
+      }
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -114,12 +128,12 @@ export function useKeyboardControls(publish: PublishFn, status: RosStatus, speed
       window.removeEventListener("keyup", onKeyUp);
       activeKeys.current.clear();
       syncActiveKeys();
-      if (publishTimer.current) {
-        clearTimeout(publishTimer.current);
-        publishTimer.current = null;
+      if (publishIntervalRef.current) {
+        clearInterval(publishIntervalRef.current);
+        publishIntervalRef.current = null;
       }
     };
-  }, [status, computeAndSend, sendCommand, syncActiveKeys]);
+  }, [status, computeVelocity, sendCommand, syncActiveKeys, startPublishing, stopPublishing, velocityRef]);
 
   return { activeKeys: activeKeysState };
 }

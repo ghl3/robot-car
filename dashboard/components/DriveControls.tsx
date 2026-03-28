@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useKeyboardControls } from "@/hooks/useKeyboardControls";
 import type { RosStatus, PublishFn } from "@/hooks/useRobot";
 
@@ -56,59 +56,94 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
   const [turnRate, setTurnRate] = useState(0.6);
   const [turnSpeed, setTurnSpeed] = useState(0.35);
   const [dpadActive, setDpadActive] = useState<Set<string>>(new Set());
-  const pressedRef = useRef(new Set<string>());
+  const dpadRef = useRef(new Set<string>());
   const connected = status === "connected";
 
-  const { activeKeys } = useKeyboardControls(publish, status, speed, turnRate, turnSpeed);
+  // Desired velocity — updated by keyboard and D-pad, published continuously
+  const velocityRef = useRef({ linear: 0, steering: 0 });
+  const publishIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const { activeKeys } = useKeyboardControls(publish, status, speed, turnRate, turnSpeed, velocityRef);
 
   const isActive = (dir: string) => activeKeys.has(dir) || dpadActive.has(dir);
 
-  const sendCmd = useCallback(
-    (linearX: number, steeringAngle: number) => {
-      if (!connected) return;
+  // Publish velocity at fixed rate (10Hz) while any input is active
+  const startPublishing = useCallback(() => {
+    if (publishIntervalRef.current) return;
+    // Send immediately
+    const v = velocityRef.current;
+    publish("/cmd_vel", "geometry_msgs/Twist", {
+      linear: { x: v.linear, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: v.steering },
+    });
+    publishIntervalRef.current = setInterval(() => {
+      const v = velocityRef.current;
       publish("/cmd_vel", "geometry_msgs/Twist", {
-        linear: { x: linearX, y: 0, z: 0 },
-        angular: { x: 0, y: 0, z: steeringAngle },
+        linear: { x: v.linear, y: 0, z: 0 },
+        angular: { x: 0, y: 0, z: v.steering },
       });
-    },
-    [publish, connected]
-  );
+    }, 100);
+  }, [publish]);
 
-  const stop = useCallback(() => sendCmd(0, 0), [sendCmd]);
+  const stopPublishing = useCallback(() => {
+    if (publishIntervalRef.current) {
+      clearInterval(publishIntervalRef.current);
+      publishIntervalRef.current = null;
+    }
+    // Send stop command
+    velocityRef.current = { linear: 0, steering: 0 };
+    publish("/cmd_vel", "geometry_msgs/Twist", {
+      linear: { x: 0, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 0 },
+    });
+  }, [publish]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (publishIntervalRef.current) clearInterval(publishIntervalRef.current);
+    };
+  }, []);
+
+  // Compute velocity from D-pad state
+  const computeDpadVelocity = useCallback(() => {
+    const p = dpadRef.current;
+    let lx = 0, sa = 0;
+    if (p.has("forward")) lx = speed;
+    else if (p.has("backward")) lx = -speed;
+    if (p.has("left")) { sa = turnRate; if (lx === 0) lx = turnSpeed; }
+    else if (p.has("right")) { sa = -turnRate; if (lx === 0) lx = turnSpeed; }
+    return { linear: lx, steering: sa };
+  }, [speed, turnRate, turnSpeed]);
 
   const startDirection = useCallback(
     (dir: string) => {
-      pressedRef.current.add(dir);
-      setDpadActive(new Set(pressedRef.current));
-      const p = pressedRef.current;
-      let lx = 0, sa = 0;
-      if (p.has("forward")) lx = speed;
-      else if (p.has("backward")) lx = -speed;
-      if (p.has("left")) { sa = turnRate; if (lx === 0) lx = turnSpeed; }
-      else if (p.has("right")) { sa = -turnRate; if (lx === 0) lx = turnSpeed; }
-      sendCmd(lx, sa);
+      dpadRef.current.add(dir);
+      setDpadActive(new Set(dpadRef.current));
+      velocityRef.current = computeDpadVelocity();
+      startPublishing();
     },
-    [speed, turnRate, turnSpeed, sendCmd]
+    [computeDpadVelocity, startPublishing]
   );
 
   const stopDirection = useCallback(
     (dir: string) => {
-      pressedRef.current.delete(dir);
-      setDpadActive(new Set(pressedRef.current));
-      if (pressedRef.current.size === 0) {
-        stop();
+      dpadRef.current.delete(dir);
+      setDpadActive(new Set(dpadRef.current));
+      if (dpadRef.current.size === 0) {
+        stopPublishing();
       } else {
-        const p = pressedRef.current;
-        let lx = 0, sa = 0;
-        if (p.has("forward")) lx = speed;
-        else if (p.has("backward")) lx = -speed;
-        if (p.has("left")) { sa = turnRate; if (lx === 0) lx = turnSpeed; }
-        else if (p.has("right")) { sa = -turnRate; if (lx === 0) lx = turnSpeed; }
-        sendCmd(lx, sa);
+        velocityRef.current = computeDpadVelocity();
       }
     },
-    [speed, turnRate, turnSpeed, sendCmd, stop]
+    [computeDpadVelocity, stopPublishing]
   );
+
+  const eStop = useCallback(() => {
+    dpadRef.current.clear();
+    setDpadActive(new Set());
+    stopPublishing();
+  }, [stopPublishing]);
 
   return (
     <div className={`bg-panel border border-panel-border rounded overflow-hidden shadow-sm ${!connected ? "opacity-50 pointer-events-none" : ""}`}>
@@ -158,7 +193,7 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
 
         {/* Emergency Stop */}
         <button
-          onClick={stop}
+          onClick={eStop}
           className="shrink-0 px-6 py-5 rounded bg-accent-red hover:bg-accent-red-bright text-white font-bold text-sm transition-colors shadow-md active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]"
         >
           E-STOP
