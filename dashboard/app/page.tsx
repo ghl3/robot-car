@@ -58,7 +58,6 @@ export default function Home() {
             cameraActive={systemInfo?.cameraActive}
             webVideoServerActive={systemInfo?.webVideoServerActive}
             detectnetActive={systemInfo?.detectnetActive}
-            depthnetActive={systemInfo?.depthnetActive}
           />
           <MapViewer
             status={status}

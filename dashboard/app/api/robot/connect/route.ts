@@ -32,6 +32,7 @@ function getSlamToolboxConfig(): string {
   return readFileSync(join(process.cwd(), "../scripts/slam_toolbox_params.yaml"), "utf-8");
 }
 
+
 function sseEvent(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
 }

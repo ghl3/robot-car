@@ -99,7 +99,7 @@ while true; do
         echo "Camera restarted (PID $CAMERA_PID)"
     fi
 
-    # Vision watchdog: detectnet (requires camera + ros_deep_learning)
+    # Vision watchdog: detectnet + depthnet (requires camera + ros_deep_learning)
     # ros_deep_learning nodes use hardcoded /detectnet/image_in topic names,
     # so we relay the camera topic to the expected input.
     if kill -0 $CAMERA_PID 2>/dev/null && rospack find ros_deep_learning >/dev/null 2>&1; then

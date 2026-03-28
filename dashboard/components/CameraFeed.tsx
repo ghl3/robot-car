@@ -3,12 +3,11 @@
 import { useState, useEffect } from "react";
 import TabBar from "./TabBar";
 
-type CameraMode = "raw" | "detection" | "depth";
+type CameraMode = "raw" | "detection";
 
 const TOPIC_MAP: Record<CameraMode, string> = {
   raw: "/csi_cam_0/image_raw",
   detection: "/detectnet/overlay",
-  depth: "/depthnet/overlay",
 };
 
 interface CameraFeedProps {
@@ -17,12 +16,11 @@ interface CameraFeedProps {
   cameraActive?: boolean;
   webVideoServerActive?: boolean;
   detectnetActive?: boolean;
-  depthnetActive?: boolean;
 }
 
 export default function CameraFeed({
   robotIp, connected, cameraActive, webVideoServerActive,
-  detectnetActive, depthnetActive,
+  detectnetActive,
 }: CameraFeedProps) {
   const [mode, setMode] = useState<CameraMode>("raw");
   const [imgError, setImgError] = useState(false);
@@ -38,10 +36,7 @@ export default function CameraFeed({
 
   const cameraDown = connected && cameraActive === false;
   const videoServerDown = connected && webVideoServerActive === false;
-  const nodeDown = connected && (
-    (mode === "detection" && detectnetActive === false) ||
-    (mode === "depth" && depthnetActive === false)
-  );
+  const nodeDown = connected && mode === "detection" && detectnetActive === false;
   const offline = !connected || cameraDown || videoServerDown || nodeDown || imgError;
 
   const offlineMessage = !connected
@@ -51,13 +46,12 @@ export default function CameraFeed({
     : videoServerDown
     ? "Video Server Offline"
     : nodeDown
-    ? `${mode === "detection" ? "Detection" : "Depth"} Node Offline`
+    ? "Detection Node Offline"
     : "Stream Error";
 
   const tabs = [
     { key: "raw", label: "RAW" },
     { key: "detection", label: "DETECT", disabled: !connected },
-    { key: "depth", label: "DEPTH", disabled: !connected },
   ];
 
   return (
