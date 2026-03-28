@@ -3,12 +3,19 @@
 import { useEffect, useRef } from "react";
 import type { Ros, Topic } from "roslib";
 
+export interface TopicOptions {
+  compression?: string;      // "none" | "png" | "cbor" | "cbor-raw"
+  throttle_rate?: number;    // ms between messages (server-side throttle)
+  queue_length?: number;     // max queued messages at bridge side
+}
+
 export function useTopicRef<T>(
   topicName: string,
   messageType: string,
   getRos: () => Ros | null,
   connected: boolean,
   onMessage?: (msg: T) => void,
+  options?: TopicOptions,
 ): React.MutableRefObject<T | null> {
   const dataRef = useRef<T | null>(null);
   const listenerRef = useRef<Topic | null>(null);
@@ -32,6 +39,9 @@ export function useTopicRef<T>(
         ros,
         name: topicName,
         messageType,
+        ...(options?.compression && { compression: options.compression }),
+        ...(options?.throttle_rate && { throttle_rate: options.throttle_rate }),
+        ...(options?.queue_length && { queue_length: options.queue_length }),
       });
 
       listenerRef.current = listener;
@@ -51,7 +61,7 @@ export function useTopicRef<T>(
         listenerRef.current = null;
       }
     };
-  }, [topicName, messageType, getRos, connected, onMessage]);
+  }, [topicName, messageType, getRos, connected, onMessage, options]);
 
   return dataRef;
 }

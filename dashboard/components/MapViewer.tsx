@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useCallback, useState } from "react";
 import { useTopic } from "@/hooks/useTopic";
-import { useTopicRef } from "@/hooks/useTopicRef";
+import { useTopicRef, type TopicOptions } from "@/hooks/useTopicRef";
 import { usePose } from "@/hooks/usePose";
 import type { Ros } from "roslib";
 import type { RosStatus } from "@/hooks/useRobot";
@@ -181,8 +181,13 @@ export default function MapViewer({
     mapStatsRef.current = { free: freeCount, occupied: occupiedCount, total: grid.data.length };
   }, []);
 
-  // Subscribe to /map via ref-based hook (large messages, no re-renders)
-  useTopicRef<OccupancyGrid>("/map", "nav_msgs/OccupancyGrid", getRos, connected, rebuildMapImage);
+  // Subscribe to /map with compression + throttle to reduce WiFi bandwidth
+  const mapTopicOptions = useRef<TopicOptions>({
+    compression: "cbor",     // binary encoding, ~50-90% smaller than JSON
+    throttle_rate: 500,      // max 2 updates/sec (server-side)
+    queue_length: 1,         // only latest map, drop stale ones
+  });
+  useTopicRef<OccupancyGrid>("/map", "nav_msgs/OccupancyGrid", getRos, connected, rebuildMapImage, mapTopicOptions.current);
 
   // Auto-switch to SLAM view when first map data arrives
   useEffect(() => {
@@ -520,7 +525,7 @@ export default function MapViewer({
       // Robot marker — arrow with halo for visibility
       ctx.save();
       ctx.translate(robotScreenX, robotScreenY);
-      ctx.rotate(-pose.theta - Math.PI / 2);
+      ctx.rotate(-pose.theta);
       const arrowLen = 18;
       const arrowWidth = 10;
       // White halo outline for contrast
@@ -574,6 +579,45 @@ export default function MapViewer({
         ctx.restore();
       }
 
+      // Scale legend (bottom-right, Google Maps style)
+      {
+        const pixelsPerMeter = scale;
+        // Pick a "nice" distance that fits in 60-150px
+        const niceDistances = [0.25, 0.5, 1, 2, 5, 10];
+        let scaleDist = 1;
+        for (const d of niceDistances) {
+          const px = d * pixelsPerMeter;
+          if (px >= 40 && px <= 150) { scaleDist = d; break; }
+          if (px < 40) scaleDist = d; // keep largest that's too small, next will be too big
+        }
+        const barPx = scaleDist * pixelsPerMeter;
+        const label = scaleDist >= 1 ? `${scaleDist}m` : `${scaleDist * 100}cm`;
+        const barX = w - barPx - 16;
+        const barY = h - 18;
+        ctx.save();
+        // Background
+        ctx.fillStyle = "rgba(236, 231, 224, 0.85)";
+        ctx.fillRect(barX - 6, barY - 14, barPx + 12, 22);
+        // Bar
+        ctx.strokeStyle = "rgba(90, 74, 56, 0.7)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(barX, barY);
+        ctx.lineTo(barX + barPx, barY);
+        // End ticks
+        ctx.moveTo(barX, barY - 4);
+        ctx.lineTo(barX, barY + 1);
+        ctx.moveTo(barX + barPx, barY - 4);
+        ctx.lineTo(barX + barPx, barY + 1);
+        ctx.stroke();
+        // Label
+        ctx.font = "10px monospace";
+        ctx.fillStyle = "rgba(90, 74, 56, 0.8)";
+        ctx.textAlign = "center";
+        ctx.fillText(label, barX + barPx / 2, barY - 5);
+        ctx.restore();
+      }
+
       // Phase 4: Playback indicator
       if (isPlaying) {
         ctx.save();
@@ -618,7 +662,7 @@ export default function MapViewer({
       // Robot marker
       ctx.save();
       ctx.translate(centerX, centerY);
-      ctx.rotate(-pose.theta - Math.PI / 2);
+      ctx.rotate(-pose.theta);
       ctx.fillStyle = ROBOT_COLOR;
       ctx.strokeStyle = ROBOT_COLOR;
       ctx.lineWidth = 2;
