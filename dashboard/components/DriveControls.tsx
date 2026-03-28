@@ -210,6 +210,8 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
               step="0.05"
               value={speed}
               onChange={(e) => setSpeed(parseFloat(e.target.value))}
+              onPointerUp={(e) => (e.target as HTMLElement).blur()}
+              onKeyDown={(e) => e.preventDefault()}
               className="flex-1 min-w-0"
             />
             <span className="w-10 text-right text-foreground text-xs font-mono">{speed.toFixed(2)}</span>
@@ -223,6 +225,8 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
               step="0.05"
               value={turnRate}
               onChange={(e) => setTurnRate(parseFloat(e.target.value))}
+              onPointerUp={(e) => (e.target as HTMLElement).blur()}
+              onKeyDown={(e) => e.preventDefault()}
               className="flex-1 min-w-0"
             />
             <span className="w-10 text-right text-foreground text-xs font-mono">{turnRate.toFixed(2)}</span>
@@ -236,6 +240,8 @@ export default function DriveControls({ publish, status }: DriveControlsProps) {
               step="0.05"
               value={turnSpeed}
               onChange={(e) => setTurnSpeed(parseFloat(e.target.value))}
+              onPointerUp={(e) => (e.target as HTMLElement).blur()}
+              onKeyDown={(e) => e.preventDefault()}
               className="flex-1 min-w-0"
             />
             <span className="w-10 text-right text-foreground text-xs font-mono">{turnSpeed.toFixed(2)}</span>
