@@ -211,7 +211,7 @@ export default function MapViewer({
     zoomRef.current = 1;
   }, []);
 
-  // Reset map: kill gmapping, clear local state, restart fresh
+  // Reset map: kill gmapping + scan filter, clear local state, restart fresh
   const resetMap = useCallback(async () => {
     if (!onRestartComponent) return;
     setResettingMap(true);
@@ -221,8 +221,12 @@ export default function MapViewer({
     lastTrailPointRef.current = null;
     autoSwitchedRef.current = false;
     setViewMode("lidar");
-    await onRestartComponent("slam");
-    setResettingMap(false);
+    try {
+      await onRestartComponent("slam");
+      await onRestartComponent("scan_filter");
+    } finally {
+      setResettingMap(false);
+    }
   }, [onRestartComponent]);
 
   // Helper: convert world coords to screen coords (used in draw loop)

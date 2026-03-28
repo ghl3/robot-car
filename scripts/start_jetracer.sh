@@ -73,32 +73,21 @@ while true; do
             roslaunch jetracer lidar.launch &
             LIDAR_PID=$!
             echo "RPLIDAR launched via jetracer lidar.launch (PID $LIDAR_PID)"
-            sleep 3
-            rosrun gmapping slam_gmapping \
-                _base_frame:=base_footprint \
-                _odom_frame:=odom \
-                _map_update_interval:=1.0 \
-                _maxUrange:=6.0 \
-                _maxRange:=8.0 \
-                _particles:=80 \
-                _linearUpdate:=0.15 \
-                _angularUpdate:=0.25 \
-                _temporalUpdate:=3.0 \
-                _delta:=0.05 \
-                _xmin:=-15.0 \
-                _xmax:=15.0 \
-                _ymin:=-15.0 \
-                _ymax:=15.0 \
-                _minimumScore:=200 \
-                _srr:=0.1 \
-                _srt:=0.2 \
-                _str:=0.1 \
-                _stt:=0.2 \
-                _iterations:=5 \
-                _lstep:=0.05 \
-                _astep:=0.05 &
-            GMAPPING_PID=$!
-            echo "gmapping SLAM started (PID $GMAPPING_PID)"
+            sleep 2
+
+            # Laser scan filter: range + median filter to clean noisy scans
+            rosparam load /tmp/laser_filter.yaml /scan_to_scan_filter_chain
+            rosrun laser_filters scan_to_scan_filter_chain \
+                scan:=scan scan_filtered:=scan_filtered &
+            FILTER_PID=$!
+            echo "Laser scan filter started (PID $FILTER_PID)"
+            sleep 1
+
+            rosparam load /tmp/slam_toolbox_params.yaml /slam_toolbox
+            rosrun slam_toolbox async_slam_toolbox_node \
+                scan:=scan_filtered &
+            SLAM_PID=$!
+            echo "slam_toolbox started (PID $SLAM_PID)"
         fi
     fi
 

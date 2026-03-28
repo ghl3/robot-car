@@ -12,13 +12,22 @@ const SERVO_BIAS = 250;
 const REQUIRED_PKGS = [
   "ros-melodic-rosbridge-suite",
   "ros-melodic-web-video-server",
-  "ros-melodic-gmapping",
+  "ros-melodic-slam-toolbox",
   "ros-melodic-map-server",
+  "ros-melodic-laser-filters",
 ];
 
 function getStartScript(): string {
   const raw = readFileSync(join(process.cwd(), "../scripts/start_jetracer.sh"), "utf-8");
   return raw.replace(/__SERVO_BIAS__/g, String(SERVO_BIAS));
+}
+
+function getLaserFilterConfig(): string {
+  return readFileSync(join(process.cwd(), "../scripts/laser_filter.yaml"), "utf-8");
+}
+
+function getSlamToolboxConfig(): string {
+  return readFileSync(join(process.cwd(), "../scripts/slam_toolbox_params.yaml"), "utf-8");
 }
 
 function sseEvent(data: Record<string, unknown>): string {
@@ -172,6 +181,16 @@ export async function POST(request: Request) {
           `cat > ${remotePath} << 'SCRIPT_EOF'\n${getStartScript()}\nSCRIPT_EOF`
         );
         await ssh.execCommand(`chmod +x ${remotePath}`);
+
+        // Upload laser filter config
+        await ssh.execCommand(
+          `cat > /tmp/laser_filter.yaml << 'YAML_EOF'\n${getLaserFilterConfig()}\nYAML_EOF`
+        );
+
+        // Upload slam_toolbox config
+        await ssh.execCommand(
+          `cat > /tmp/slam_toolbox_params.yaml << 'YAML_EOF'\n${getSlamToolboxConfig()}\nYAML_EOF`
+        );
 
         // Launch services (no PTY — PTY would kill the process when SSH disconnects)
         log("Launching JetRacer services...");

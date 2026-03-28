@@ -1,0 +1,26 @@
+# Laser scan filter chain for RPLIDAR A1.
+# Sits between raw /scan and /scan_filtered (consumed by slam_toolbox).
+# Uploaded to /tmp/laser_filter.yaml on the Jetson during the connect flow.
+
+scan_filter_chain:
+  # Angular bounds: trim from 360 to ~350 degrees.
+  # The RPLIDAR A1 produces variable scan counts (e.g., 1146 vs 1147 readings)
+  # due to how it handles the 0/360 degree overlap. slam_toolbox's 360-degree
+  # special-case path expects a fixed count and crashes with:
+  #   "LaserRangeScan contains X range readings, expected Y"
+  # Trimming to <360 degrees avoids this code path entirely.
+  - name: angle
+    type: laser_filters/LaserScanAngularBoundsFilter
+    params:
+      lower_angle: -3.05                # ~-174.8 degrees
+      upper_angle: 3.05                 # ~+174.8 degrees
+
+  # Range: drop floor reflections and distant noise.
+  # On bumpy surfaces (rugs), the lidar tilts and hits the floor, producing
+  # spurious short-range readings. The upper bound matches slam_toolbox's
+  # max_laser_range for consistency.
+  - name: range
+    type: laser_filters/LaserScanRangeFilter
+    params:
+      lower_threshold: 0.2              # floor/chassis reflections
+      upper_threshold: 6.0              # distant noise
