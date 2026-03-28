@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       // ── Map operations ──
       case "save": {
         // Check gmapping is running
-        const slamCheck = await executeCommand(ip, "pgrep -f slam_gmapping", creds);
+        const slamCheck = await executeCommand(ip, "pgrep -f slam_toolbox", creds);
         if (slamCheck.exitCode !== 0) {
           return NextResponse.json({ success: false, message: "SLAM is not running — start mapping first" });
         }

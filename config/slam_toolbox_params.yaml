@@ -22,6 +22,11 @@ base_frame: base_footprint
 scan_topic: /scan_filtered
 mode: mapping
 
+# When map_file_name is set (by start_jetracer.sh), slam_toolbox auto-loads
+# the serialized pose graph on startup and continues mapping from it.
+# map_file_name is set dynamically -- do not hardcode it here.
+map_start_at_dock: true
+
 # --- General ---
 throttle_scans: 1
 transform_publish_period: 0.05          # 20Hz map->odom TF (default 50Hz, reduced for CPU)

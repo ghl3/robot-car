@@ -47,13 +47,14 @@ interface MapViewerProps {
   lidarActive?: boolean;
   slamActive?: boolean;
   navActive?: boolean;
+  lastMapSave?: number;
   robotIp?: string;
   credentials?: { username: string; password: string };
   onRestartComponent?: (component: string) => Promise<unknown>;
 }
 
 export default function MapViewer({
-  status, getRos, publish, lidarDetected, lidarActive, slamActive, navActive,
+  status, getRos, publish, lidarDetected, lidarActive, slamActive, navActive, lastMapSave,
   robotIp, credentials, onRestartComponent,
 }: MapViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -515,9 +516,13 @@ export default function MapViewer({
         const known = stats.free + stats.occupied;
         const pct = stats.total > 0 ? Math.round(100 * known / stats.total) : 0;
         const res = map.info.resolution;
+        const saveAge = lastMapSave && lastMapSave > 0
+          ? `Saved ${Math.round((Date.now() / 1000 - lastMapSave) / 60)}m ago`
+          : "Not saved";
         const lines = [
           `${mw}×${mh} @ ${(res * 100).toFixed(0)}cm/cell`,
           `${pct}% explored (${known.toLocaleString()} cells)`,
+          saveAge,
         ];
         const lineHeight = 13;
         const padding = 6;

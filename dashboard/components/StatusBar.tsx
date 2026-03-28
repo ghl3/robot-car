@@ -63,6 +63,7 @@ interface StatusBarProps {
     cameraActive: boolean; webVideoServerActive: boolean;
     detectnetActive: boolean; depthnetActive: boolean;
     navActive: boolean;
+    lastMapSave: number;
   } | null) => void;
   onRestartRef?: React.MutableRefObject<((component: string) => Promise<unknown>) | undefined>;
 }
@@ -114,6 +115,7 @@ export default function StatusBar({ rosStatus, onConnect, onDisconnect, onSystem
       webVideoServerActive: systemInfo.webVideoServerActive,
       detectnetActive: systemInfo.detectnetActive, depthnetActive: systemInfo.depthnetActive,
       navActive: systemInfo.navActive,
+      lastMapSave: systemInfo.lastMapSave,
     } : null);
   }, [systemInfo, onSystemInfo]);
 

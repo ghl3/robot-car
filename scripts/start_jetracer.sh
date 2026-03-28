@@ -64,6 +64,8 @@ done
 
 echo "JetRacer running. PID $$"
 
+LAST_MAP_SAVE=0
+
 # Watchdog loop: auto-launch LIDAR when device appears
 while true; do
     if [ -z "$LIDAR_PID" ] || ! kill -0 $LIDAR_PID 2>/dev/null; then
@@ -84,6 +86,13 @@ while true; do
             sleep 1
 
             rosparam load /tmp/slam_toolbox_params.yaml /slam_toolbox
+            # Auto-load saved map if available
+            mkdir -p $HOME/maps
+            LATEST_MAP="$HOME/maps/slam_latest"
+            if [ -f "${LATEST_MAP}.posegraph" ]; then
+                rosparam set /slam_toolbox/map_file_name "${LATEST_MAP}"
+                echo "Loading saved map from ${LATEST_MAP}"
+            fi
             rosrun slam_toolbox async_slam_toolbox_node \
                 scan:=scan_filtered &
             SLAM_PID=$!
@@ -135,6 +144,22 @@ while true; do
         rosrun web_video_server web_video_server &
         WEB_SERVER_PID=$!
         echo "web_video_server restarted (PID $WEB_SERVER_PID)"
+    fi
+
+    # Auto-save SLAM map every 2 minutes
+    NOW=$(date +%s)
+    if [ -n "$SLAM_PID" ] && kill -0 $SLAM_PID 2>/dev/null && [ $((NOW - LAST_MAP_SAVE)) -ge 120 ]; then
+        SAVE_NAME="$HOME/maps/slam_$(date +%Y%m%d_%H%M%S)"
+        if rosservice call /slam_toolbox/serialize_map "{filename: '${SAVE_NAME}'}" 2>/dev/null; then
+            ln -sfn "${SAVE_NAME}.posegraph" "$HOME/maps/slam_latest.posegraph"
+            ln -sfn "${SAVE_NAME}.data" "$HOME/maps/slam_latest.data"
+            echo "Map saved: ${SAVE_NAME}"
+        fi
+        # Keep only 10 most recent saves (each = .posegraph + .data)
+        ls -t $HOME/maps/slam_2*.posegraph 2>/dev/null | tail -n +11 | while read f; do
+            rm -f "$f" "${f%.posegraph}.data"
+        done
+        LAST_MAP_SAVE=$NOW
     fi
 
     sleep 5

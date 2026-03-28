@@ -19,6 +19,7 @@ interface SystemInfo {
   detectnetActive: boolean;
   depthnetActive: boolean;
   navActive: boolean;
+  lastMapSave: number;
 }
 
 export default function Home() {
@@ -68,6 +69,7 @@ export default function Home() {
             lidarActive={systemInfo?.lidarActive}
             slamActive={systemInfo?.slamActive}
             navActive={systemInfo?.navActive}
+            lastMapSave={systemInfo?.lastMapSave}
             robotIp={ip || undefined}
             credentials={credentials}
             onRestartComponent={async (c) => { await restartComponentRef.current?.(c); }}

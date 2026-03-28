@@ -18,6 +18,7 @@ interface SystemInfo {
   detectnetActive: boolean;
   depthnetActive: boolean;
   navActive: boolean;
+  lastMapSave: number;
 }
 
 interface WifiNetwork {
@@ -119,6 +120,7 @@ export function useRobotManager({ onServicesStarted, onServicesStopped, robotIp,
           detectnetActive: data.detectnetActive ?? false,
           depthnetActive: data.depthnetActive ?? false,
           navActive: data.navActive ?? false,
+          lastMapSave: data.lastMapSave ?? 0,
         });
         setServicesRunning(data.rosRunning);
         setError(null);
