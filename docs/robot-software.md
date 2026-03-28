@@ -129,8 +129,8 @@ Bags are stored in `~/bags/` and maps in `~/maps/` on the Jetson.
 | File | Role |
 |------|------|
 | `scripts/start_jetracer.sh` | Startup script with watchdog loops |
-| `scripts/laser_filter.yaml` | Laser scan filter configuration |
-| `scripts/slam_toolbox_params.yaml` | slam_toolbox SLAM parameters |
+| `config/laser_filter.yaml` | Laser scan filter configuration |
+| `config/slam_toolbox_params.yaml` | slam_toolbox SLAM parameters |
 | `dashboard/app/api/robot/restart-component/route.ts` | Per-component restart commands |
 | `dashboard/app/api/robot/status/route.ts` | Health monitoring endpoint |
 | `dashboard/app/api/robot/maps/route.ts` | Map save/load, rosbag record/playback |

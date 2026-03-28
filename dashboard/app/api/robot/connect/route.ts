@@ -17,6 +17,8 @@ const REQUIRED_PKGS = [
   "ros-melodic-laser-filters",
   "ros-melodic-vision-msgs",
   "ros-melodic-image-transport",
+  "ros-melodic-navigation",
+  "ros-melodic-teb-local-planner",
 ];
 
 function getStartScript(): string {
@@ -25,13 +27,22 @@ function getStartScript(): string {
 }
 
 function getLaserFilterConfig(): string {
-  return readFileSync(join(process.cwd(), "../scripts/laser_filter.yaml"), "utf-8");
+  return readFileSync(join(process.cwd(), "../config/laser_filter.yaml"), "utf-8");
 }
 
 function getSlamToolboxConfig(): string {
-  return readFileSync(join(process.cwd(), "../scripts/slam_toolbox_params.yaml"), "utf-8");
+  return readFileSync(join(process.cwd(), "../config/slam_toolbox_params.yaml"), "utf-8");
 }
 
+function getNavConfigs(): Record<string, string> {
+  const dir = join(process.cwd(), "../config");
+  const files = ["nav_move_base", "nav_costmap_common", "nav_local_costmap", "nav_global_costmap", "nav_teb_planner"];
+  const configs: Record<string, string> = {};
+  for (const f of files) {
+    configs[f] = readFileSync(join(dir, `${f}.yaml`), "utf-8");
+  }
+  return configs;
+}
 
 function sseEvent(data: Record<string, unknown>): string {
   return `data: ${JSON.stringify(data)}\n\n`;
@@ -194,6 +205,15 @@ export async function POST(request: Request) {
         await ssh.execCommand(
           `cat > /tmp/slam_toolbox_params.yaml << 'YAML_EOF'\n${getSlamToolboxConfig()}\nYAML_EOF`
         );
+
+        // Upload navigation configs
+        await ssh.execCommand(`mkdir -p /tmp/nav`);
+        const navConfigs = getNavConfigs();
+        for (const [name, content] of Object.entries(navConfigs)) {
+          await ssh.execCommand(
+            `cat > /tmp/nav/${name}.yaml << 'YAML_EOF'\n${content}\nYAML_EOF`
+          );
+        }
 
         // Build ros_deep_learning if not already installed (one-time setup)
         const rosEnv = "source /opt/ros/melodic/setup.bash && source ~/catkin_ws/devel/setup.bash";

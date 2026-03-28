@@ -54,7 +54,7 @@ On rugs, the robot bounces and the LIDAR physically tilts, hitting the floor and
 
 ### Filter chain
 
-Configured in `scripts/laser_filter.yaml`:
+Configured in `config/laser_filter.yaml`:
 
 | Order | Filter | Parameters | Purpose |
 |-------|--------|------------|---------|
@@ -63,7 +63,7 @@ Configured in `scripts/laser_filter.yaml`:
 
 ## Configuration
 
-All slam_toolbox parameters are in `scripts/slam_toolbox_params.yaml`. Key settings:
+All slam_toolbox parameters are in `config/slam_toolbox_params.yaml`. Key settings:
 
 ### Map
 
@@ -132,6 +132,6 @@ Serialized files (`.posegraph` + `.data`) go to `~/.ros/` on the Jetson. Dashboa
 
 | File | Role |
 |------|------|
-| `scripts/slam_toolbox_params.yaml` | slam_toolbox configuration |
-| `scripts/laser_filter.yaml` | Laser scan filter chain |
+| `config/slam_toolbox_params.yaml` | slam_toolbox configuration |
+| `config/laser_filter.yaml` | Laser scan filter chain |
 | `scripts/start_jetracer.sh` | Launches filter + slam_toolbox in watchdog loop |
